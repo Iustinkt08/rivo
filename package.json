@@ -1,0 +1,21 @@
+{
+  "name": "rivo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rivo - Beauty Marketplace Platform",
+  "workspaces": [
+    "apps/mobile",
+    "apps/backend",
+    "packages/*"
+  ],
+  "scripts": {
+    "mobile": "npm run start --workspace=apps/mobile",
+    "backend": "npm run start:dev --workspace=apps/backend",
+    "backend:build": "npm run build --workspace=apps/backend",
+    "db:generate": "npm run prisma:generate --workspace=apps/backend",
+    "db:migrate": "npm run prisma:migrate --workspace=apps/backend",
+    "db:studio": "npm run prisma:studio --workspace=apps/backend"
+  },
+  "author": "",
+  "license": "ISC"
+}
