@@ -17,5 +17,8 @@
     "db:studio": "npm run prisma:studio --workspace=apps/backend"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "expo-linear-gradient": "~15.0.8"
+  }
 }
