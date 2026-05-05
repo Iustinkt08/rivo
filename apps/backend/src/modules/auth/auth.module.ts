@@ -1,29 +1,34 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { FirebaseAuthGuard } from './guards/firebase-auth.guard';
+import { SupabaseAuthGuard } from './guards/supabase-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
-import { FirebaseModule } from '../firebase/firebase.module';
 
 @Module({
-  imports: [FirebaseModule],
+  imports: [
+    JwtModule.register({
+      secret: process.env.SUPABASE_JWT_SECRET,
+      signOptions: { algorithm: 'HS256' },
+    }),
+  ],
   controllers: [AuthController],
   providers: [
     AuthService,
-    FirebaseAuthGuard,
+    SupabaseAuthGuard,
     RolesGuard,
-    // Register FirebaseAuthGuard globally so every route is protected by default.
+    // Register SupabaseAuthGuard globally so every route is protected by default.
     // Use @Public() to opt-out on specific routes.
     {
       provide: APP_GUARD,
-      useClass: FirebaseAuthGuard,
+      useClass: SupabaseAuthGuard,
     },
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
     },
   ],
-  exports: [AuthService, FirebaseAuthGuard, RolesGuard],
+  exports: [AuthService, SupabaseAuthGuard, RolesGuard],
 })
 export class AuthModule {}

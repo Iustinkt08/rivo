@@ -18,7 +18,7 @@ import {
 } from '@nestjs/swagger';
 import { User } from '@prisma/client';
 import { AuthService } from './auth.service';
-import { FirebaseAuthGuard } from './guards/firebase-auth.guard';
+import { SupabaseAuthGuard } from './guards/supabase-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
@@ -35,7 +35,7 @@ import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
  */
 @ApiTags('Auth')
 @ApiBearerAuth()
-@UseGuards(FirebaseAuthGuard, RolesGuard)
+@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

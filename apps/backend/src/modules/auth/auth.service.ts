@@ -1,9 +1,14 @@
 import { Injectable, Logger, ConflictException } from '@nestjs/common';
-import { DecodedIdToken } from 'firebase-admin/auth';
 import { User, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+
+export interface SupabaseTokenPayload {
+  uid: string;
+  email?: string;
+  phone?: string;
+}
 
 @Injectable()
 export class AuthService {
@@ -13,24 +18,23 @@ export class AuthService {
 
   /**
    * Called on every authenticated request.
-   * Finds an existing user by Firebase UID or creates a new one from the token claims.
+   * Finds an existing user by Supabase UID or creates a new one from the token claims.
    */
-  async getOrCreateUser(decoded: DecodedIdToken): Promise<User & { isNewUser?: boolean }> {
+  async getOrCreateUser(decoded: SupabaseTokenPayload): Promise<User & { isNewUser?: boolean }> {
     const existing = await this.prisma.user.findUnique({
       where: { firebaseUid: decoded.uid },
     });
 
     if (existing) return existing;
 
-    // First login — create a stub user from Firebase claims
+    // First login — create a stub user from Supabase claims
     const newUser = await this.prisma.user.create({
       data: {
         firebaseUid: decoded.uid,
         email: decoded.email ?? null,
-        phone: decoded.phone_number ?? null,
-        firstName: decoded.name?.split(' ')[0] ?? 'User',
-        lastName: decoded.name?.split(' ').slice(1).join(' ') ?? '',
-        avatarUrl: decoded.picture ?? null,
+        phone: decoded.phone ?? null,
+        firstName: 'User',
+        lastName: '',
         role: UserRole.CLIENT,
       },
     });
