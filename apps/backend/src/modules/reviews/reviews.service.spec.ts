@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReviewsService } from './reviews.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 describe('ReviewsService — findBySalon', () => {
   let service: ReviewsService;
@@ -8,6 +9,7 @@ describe('ReviewsService — findBySalon', () => {
   const prismaMock = {
     review: { findMany: jest.fn() },
   };
+  const notificationsMock = { notify: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -16,6 +18,7 @@ describe('ReviewsService — findBySalon', () => {
       providers: [
         ReviewsService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: NotificationsService, useValue: notificationsMock },
       ],
     }).compile();
 

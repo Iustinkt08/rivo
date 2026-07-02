@@ -1,24 +1,55 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export class CreateReviewDto {
+  @IsUUID()
   appointmentId: string;
-  rating: number; // 1–5
+
+  // Bounded 1–5 integer — without this an attacker can POST any number and
+  // corrupt the salon's cached average rating.
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
   comment?: string;
 }
 
 @Injectable()
 export class ReviewsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ReviewsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async create(clientId: string, dto: CreateReviewDto) {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: dto.appointmentId },
+      include: {
+        salon: { select: { adminId: true, name: true } },
+        client: { select: { firstName: true, lastName: true } },
+      },
     });
 
     if (!appointment) throw new NotFoundException('Appointment not found');
@@ -58,6 +89,26 @@ export class ReviewsService {
         reviewCount: agg._count,
       },
     });
+
+    // Notify the salon owner about the new review (non-fatal).
+    try {
+      const client =
+        `${appointment.client?.firstName ?? ''} ${
+          appointment.client?.lastName ?? ''
+        }`.trim() || 'Un client';
+      await this.notifications.notify(appointment.salon.adminId, {
+        type: 'REVIEW',
+        title: 'Recenzie nouă',
+        body: `${client} a lăsat o recenzie de ${dto.rating}★.`,
+        appointmentId: appointment.id,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to notify salon of new review (appointment=${appointment.id}): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    }
 
     return review;
   }
