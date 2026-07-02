@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { ReviewsService } from './reviews.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -75,5 +76,87 @@ describe('ReviewsService — findBySalon', () => {
 
     // Assert
     expect(result[0]).toMatchObject({ staffId: null, staffName: null });
+  });
+});
+
+describe('ReviewsService — reply', () => {
+  let service: ReviewsService;
+
+  const prismaMock = {
+    review: { findUnique: jest.fn(), update: jest.fn() },
+  };
+  const notificationsMock = { notify: jest.fn() };
+
+  const OWNER_ID = 'owner-1';
+  const CLIENT_ID = 'client-1';
+  const reviewRow = {
+    id: 'rev-1',
+    clientId: CLIENT_ID,
+    appointmentId: 'appt-1',
+    salon: { adminId: OWNER_ID, name: 'Salon' },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReviewsService,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: NotificationsService, useValue: notificationsMock },
+      ],
+    }).compile();
+
+    service = module.get<ReviewsService>(ReviewsService);
+
+    prismaMock.review.findUnique.mockResolvedValue(reviewRow);
+    prismaMock.review.update.mockResolvedValue({
+      id: 'rev-1',
+      replyText: 'Mulțumim!',
+    });
+  });
+
+  it('sets replyText + repliedAt and notifies the reviewing client', async () => {
+    // Act
+    await service.reply('rev-1', OWNER_ID, 'Mulțumim!');
+
+    // Assert
+    const updateArgs = prismaMock.review.update.mock.calls[0][0];
+    expect(updateArgs.data.replyText).toBe('Mulțumim!');
+    expect(updateArgs.data.repliedAt).toBeInstanceOf(Date);
+    expect(notificationsMock.notify).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.objectContaining({ type: 'REVIEW' }),
+    );
+  });
+
+  it('throws ForbiddenException when the caller is not the salon owner', async () => {
+    // Act + Assert
+    await expect(
+      service.reply('rev-1', 'someone-else', 'hi'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.review.update).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException for a missing review', async () => {
+    // Arrange
+    prismaMock.review.findUnique.mockResolvedValue(null);
+
+    // Act + Assert
+    await expect(service.reply('nope', OWNER_ID, 'hi')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('still succeeds when the client notification fails', async () => {
+    // Arrange
+    notificationsMock.notify.mockRejectedValue(new Error('down'));
+
+    // Act
+    const result = await service.reply('rev-1', OWNER_ID, 'Mulțumim!');
+
+    // Assert
+    expect(result).toMatchObject({ id: 'rev-1' });
   });
 });

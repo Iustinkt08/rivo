@@ -113,9 +113,11 @@ export class ReviewsService {
     return review;
   }
 
-  async findBySalon(salonId: string, limit = 20) {
+  // `includeHidden` is used by the owner-facing listing so the salon can manage
+  // all of its reviews; the public endpoint keeps `isVisible: true` only.
+  async findBySalon(salonId: string, limit = 20, includeHidden = false) {
     const reviews = await this.prisma.review.findMany({
-      where: { salonId, isVisible: true },
+      where: { salonId, ...(includeHidden ? {} : { isVisible: true }) },
       orderBy: { createdAt: 'desc' },
       take: limit,
       include: {
@@ -142,5 +144,55 @@ export class ReviewsService {
         staffName: staff ? `${staff.firstName} ${staff.lastName}`.trim() : null,
       };
     });
+  }
+
+  // Owner-facing listing: verifies salon ownership, then returns every review
+  // (including hidden) with staff attribution and reply state.
+  async findBySalonForOwner(salonId: string, ownerId: string) {
+    const salon = await this.prisma.salon.findUnique({
+      where: { id: salonId },
+      select: { adminId: true },
+    });
+    if (!salon) throw new NotFoundException('Salon not found');
+    if (salon.adminId !== ownerId)
+      throw new ForbiddenException('Not your salon');
+    return this.findBySalon(salonId, 100, true);
+  }
+
+  /**
+   * Salon owner posts a public reply to one of their reviews. The reviewing
+   * client is notified (non-fatal).
+   */
+  async reply(reviewId: string, ownerId: string, replyText: string) {
+    const review = await this.prisma.review.findUnique({
+      where: { id: reviewId },
+      include: { salon: { select: { adminId: true, name: true } } },
+    });
+    if (!review) throw new NotFoundException('Review not found');
+    if (review.salon.adminId !== ownerId)
+      throw new ForbiddenException('Not your salon');
+
+    const updated = await this.prisma.review.update({
+      where: { id: reviewId },
+      data: { replyText, repliedAt: new Date() },
+    });
+
+    // Notify the client that the salon replied to their review (non-fatal).
+    try {
+      await this.notifications.notify(review.clientId, {
+        type: 'REVIEW',
+        title: 'Răspuns la recenzia ta',
+        body: `${review.salon.name} a răspuns la recenzia ta.`,
+        appointmentId: review.appointmentId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to notify client of review reply (review=${reviewId}): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    }
+
+    return updated;
   }
 }

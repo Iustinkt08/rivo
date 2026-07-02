@@ -48,7 +48,7 @@ Legend: ✅ fully wired · ⚠️ partial · ❌ ghost (UI, no effect) · 🚫 m
 | Confirm pending | status→CONFIRMED → client notified | ✅ |
 | Cancel / no-show | status update → client notified; gated so NO_SHOW/COMPLETED only after start time | ✅ |
 | Mark completed | → client app prompts "leave a review" on next open | ✅ |
-| Reply to a review | `replyText` column + client UI renders it, **but no endpoint to write a reply** | 🚫 missing (write side) |
+| Reply to a review | owner posts reply (`PATCH /reviews/:id/reply`) → `replyText`/`repliedAt` set → **client notified** → client UI renders the reply; business "Recenzii" screen to view + reply | ✅ *(built this pass)* |
 | Change hours / block slot / close day | new bookings respect schedule + time-off; **existing bookings in a newly-blocked window are not auto-handled or the customer notified** | ⚠️ partial |
 | Change service price/duration | future bookings use current price; **existing bookings keep `priceSnapshot`** (integrity preserved) | ✅ |
 | Change staff availability | client booking screen reflects schedule/time-off | ✅ |
@@ -56,7 +56,7 @@ Legend: ✅ fully wired · ⚠️ partial · ❌ ghost (UI, no effect) · 🚫 m
 
 ### State-consistency invariants
 - **Single source of truth:** both sides read the `appointments` table via API. ✅
-- **No double-booking:** overlap check on create/lock/reschedule. ⚠️ **TOCTOU** — check-then-write without a transaction/advisory lock; narrow race on the exact same slot (pre-existing, mirrors `create()`). Low severity.
+- **No double-booking:** overlap check on create/lock/reschedule, now **wrapped in a `$transaction`** (check + write are atomic) so two concurrent requests on the same slot can't both commit. ✅ *(applied this pass)*
 - **Rating integrity:** recomputed from `isVisible` reviews; review requires an own, COMPLETED, not-yet-reviewed appointment; **rating now bounded 1–5 int** (was unvalidated). ✅
 - **Notification correctness:** per-action inserts; `markRead` ownership-checked; idempotent per action. ✅
 - **Timezone:** salon-local day windows (Europe/Bucharest, DST-aware) on the server; local day-keys on the client. ✅ *(fixed today)*
@@ -100,9 +100,12 @@ Legend: ✅ fully wired · ⚠️ partial · ❌ ghost (UI, no effect) · 🚫 m
 - **RLS** — enabled + default-deny on every table; anon key gives no table access.
 - **No secrets in client bundle** — `.env` removed from tracking; only the Supabase **publishable** (anon) key ships, which is safe by design.
 
-### Real Supabase findings — documented, NOT applied (need branch verification)
-1. **WARN — public buckets `avatars`, `salon-assets` allow listing.** A broad `SELECT` on `storage.objects` lets clients enumerate every filename. Public **object** reads via direct URL do **not** need this policy, so it can be tightened without breaking image display — but this must be verified on a Supabase **dev branch** (confirm images still load) before touching prod. Remediation: drop the broad listing `SELECT` policy on each bucket.
-2. **WARN — leaked-password protection disabled** (Supabase Auth). One-click dashboard toggle (Auth → Password security → enable HaveIBeenPwned). Affects Supabase-authenticated users (clients/owners); staff use backend bcrypt.
+### Supabase / Storage findings
+| Severity | Finding | Status |
+|---|---|---|
+| **HIGH** | Storage write policies granted **any authenticated user** INSERT/UPDATE/DELETE on `avatars` + `salon-assets` scoped only by `bucket_id` (no owner/path check). Uploads happen client-direct to Supabase Storage, so any user could overwrite/delete any salon logo or avatar by path. | ✅ **fixed** — migration `scope_storage_writes_to_owner`: writes require `(storage.foldername(name))[1] = navira_uid()` (a `SECURITY DEFINER`, `search_path`-pinned fn mapping `auth.uid()`→internal user id). Verified: all owners have `firebaseUid`, so onboarding logo upload still works. |
+| **WARN** | Public buckets allowed **listing** all filenames (broad `SELECT`). | ✅ **fixed** — listing `SELECT` policies dropped; buckets are `public=true` so direct object URLs (the only access the app uses — no `.list()` calls) keep working. |
+| **WARN** | Leaked-password protection disabled (Supabase Auth). | ⚠️ **needs dashboard toggle** — no MCP tool to set it. Auth → Password security → enable HaveIBeenPwned. Affects Supabase-auth users (clients/owners); staff use backend bcrypt. |
 
 ---
 
@@ -113,10 +116,10 @@ Legend: ✅ fully wired · ⚠️ partial · ❌ ghost (UI, no effect) · 🚫 m
 - **No pricing/payout/commission logic was changed.** `priceSnapshot` integrity (existing bookings keep their agreed price) was verified, not modified.
 
 ## Not Fixed / Needs a Decision
-- 🚫 **Reply-to-review** — net-new: backend endpoint (owner writes `replyText`) + business UI. The schema and client display already exist. Recommend implementing next.
 - ⚠️ **Existing bookings when a salon blocks a slot / closes a day** — currently not auto-cancelled or the customer notified. Needs a product decision (auto-cancel + notify vs. flag for manual handling) before implementing.
-- ⚠️ **TOCTOU** on create/reschedule overlap — wrap the overlap-check + write in a transaction or advisory lock if concurrent same-slot writes become a concern.
-- **2 Supabase config findings** above — apply on a dev branch first.
+- ⚠️ **Leaked-password protection** — enable in the Supabase dashboard (no API/MCP toggle available).
+
+*Resolved after the initial report:* reply-to-review (built end-to-end), TOCTOU (transaction-wrapped), and both storage findings (write-scoping + listing) — see above.
 
 ---
 
@@ -142,6 +145,12 @@ Legend: ✅ fully wired · ⚠️ partial · ❌ ghost (UI, no effect) · 🚫 m
 - Staff-mode UI hides salon-wide data; staff/Supabase sessions cleared correctly on login/logout (shared-device safety).
 
 ---
+
+## Applied after the initial report (this pass)
+- **Reply-to-review** end-to-end: `PATCH /reviews/:id/reply` (owner-only) + `GET /salons/:id/reviews/manage` (owner) + client notification + new business **Recenzii** screen (view + reply), reachable from Settings.
+- **TOCTOU** closed: overlap-check + write wrapped in `$transaction` in `create()` and `reschedule()`.
+- **Storage HIGH + WARN** fixed via the `scope_storage_writes_to_owner` Supabase migration (owner-scoped writes + listing disabled), verified non-destructive.
+- **Review rating** bounded 1–5; salon notified on new review.
 
 ## Overall Assessment
 **Feature integrity:** strong — the core two-sided chains (book, confirm, cancel, reschedule, review, notify) are wired end-to-end and verified. Two genuine gaps remain (reply-to-review write side; existing-bookings-on-slot-block), both needing a product call.

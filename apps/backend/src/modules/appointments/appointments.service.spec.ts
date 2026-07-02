@@ -19,6 +19,8 @@ describe('AppointmentsService — create', () => {
     staff: { findFirst: jest.fn() },
     appointment: { findFirst: jest.fn(), create: jest.fn() },
     clientSalonProfile: { findUnique: jest.fn(), upsert: jest.fn() },
+    // Interactive transaction: run the callback with the mock itself as `tx`.
+    $transaction: jest.fn((cb: any) => cb(prismaMock)),
   };
   const slotLockMock = { releaseLock: jest.fn() };
   const notificationsMock = { notify: jest.fn() };
@@ -170,6 +172,18 @@ describe('AppointmentsService — create', () => {
     );
     expect(prismaMock.appointment.create).not.toHaveBeenCalled();
   });
+
+  it('rejects an overlapping slot inside the transaction (TOCTOU guard)', async () => {
+    // Arrange — overlap check (run with tx) finds a colliding appointment
+    prismaMock.appointment.findFirst.mockResolvedValue({ id: 'other-appt' });
+
+    // Act + Assert
+    await expect(service.create(CLIENT_ID, dto)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(prismaMock.$transaction).toHaveBeenCalled();
+    expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('AppointmentsService — updateStatus time gating', () => {
@@ -288,6 +302,7 @@ describe('AppointmentsService — reschedule', () => {
       update: jest.fn(),
     },
     staff: { findFirst: jest.fn() },
+    $transaction: jest.fn((cb: any) => cb(prismaMock)),
   };
   const slotLockMock = { releaseLock: jest.fn() };
   const notificationsMock = { notify: jest.fn() };
@@ -419,6 +434,7 @@ describe('AppointmentsService — staff scoping', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    $transaction: jest.fn((cb: any) => cb(prismaMock)),
   };
   const slotLockMock = { releaseLock: jest.fn() };
   const notificationsMock = { notify: jest.fn() };

@@ -511,55 +511,57 @@ export class AppointmentsService {
     this.assertBookableWindow(startAt);
     const endAt = new Date(startAt.getTime() + service.durationMin * 60000);
 
-    // Double-check no overlapping appointment (race condition safety)
-    const overlap = await this.prisma.appointment.findFirst({
-      where: {
-        staffId: dto.staffId,
-        status: {
-          in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
+    // Overlap check + insert run in one transaction so two concurrent bookings
+    // for the same staff/slot can't both pass the check and both commit (TOCTOU).
+    const appointment = await this.prisma.$transaction(async (tx) => {
+      const overlap = await tx.appointment.findFirst({
+        where: {
+          staffId: dto.staffId,
+          status: {
+            in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
+          },
+          startAt: { lt: endAt },
+          endAt: { gt: startAt },
         },
-        startAt: { lt: endAt },
-        endAt: { gt: startAt },
-      },
-    });
-    if (overlap)
-      throw new ConflictException('The selected slot is no longer available');
+      });
+      if (overlap)
+        throw new ConflictException('The selected slot is no longer available');
 
-    // Create the appointment
-    const appointment = await this.prisma.appointment.create({
-      data: {
-        clientId,
-        salonId: dto.salonId,
-        staffId: dto.staffId,
-        serviceId: dto.serviceId,
-        startAt,
-        endAt,
-        source: dto.source ?? BookingSource.ONLINE,
-        guestName: dto.guestName,
-        guestPhone: dto.guestPhone,
-        clientNotes: dto.clientNotes,
-        priceSnapshot: service.price,
-        currency: service.currency,
-        status: AppointmentStatus.PENDING,
-      },
-      include: {
-        client: {
-          select: { id: true, firstName: true, lastName: true, phone: true },
+      return tx.appointment.create({
+        data: {
+          clientId,
+          salonId: dto.salonId,
+          staffId: dto.staffId,
+          serviceId: dto.serviceId,
+          startAt,
+          endAt,
+          source: dto.source ?? BookingSource.ONLINE,
+          guestName: dto.guestName,
+          guestPhone: dto.guestPhone,
+          clientNotes: dto.clientNotes,
+          priceSnapshot: service.price,
+          currency: service.currency,
+          status: AppointmentStatus.PENDING,
         },
-        staff: { select: { id: true, firstName: true, lastName: true } },
-        service: {
-          select: { id: true, name: true, durationMin: true, price: true },
-        },
-        salon: {
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-            addressLine1: true,
-            adminId: true,
+        include: {
+          client: {
+            select: { id: true, firstName: true, lastName: true, phone: true },
+          },
+          staff: { select: { id: true, firstName: true, lastName: true } },
+          service: {
+            select: { id: true, name: true, durationMin: true, price: true },
+          },
+          salon: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              addressLine1: true,
+              adminId: true,
+            },
           },
         },
-      },
+      });
     });
 
     // Ensure the client appears in the salon's client list (idempotent);
@@ -819,29 +821,31 @@ export class AppointmentsService {
       startAt.getTime() + appt.service.durationMin * 60000,
     );
 
-    // The target slot must be free for the target staff (excluding this
-    // appointment itself — moving within its own window is fine).
-    const overlap = await this.prisma.appointment.findFirst({
-      where: {
-        id: { not: id },
-        staffId: targetStaffId,
-        status: {
-          in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
+    // Overlap check + move run in one transaction so two concurrent reschedules
+    // onto the same slot can't both pass the check and both commit (TOCTOU).
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const overlap = await tx.appointment.findFirst({
+        where: {
+          id: { not: id },
+          staffId: targetStaffId,
+          status: {
+            in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED],
+          },
+          startAt: { lt: endAt },
+          endAt: { gt: startAt },
         },
-        startAt: { lt: endAt },
-        endAt: { gt: startAt },
-      },
-    });
-    if (overlap)
-      throw new ConflictException('The selected slot is no longer available');
+      });
+      if (overlap)
+        throw new ConflictException('The selected slot is no longer available');
 
-    const updated = await this.prisma.appointment.update({
-      where: { id },
-      data: { startAt, endAt, staffId: targetStaffId },
-      include: {
-        staff: { select: { id: true, firstName: true, lastName: true } },
-        service: { select: { id: true, name: true } },
-      },
+      return tx.appointment.update({
+        where: { id },
+        data: { startAt, endAt, staffId: targetStaffId },
+        include: {
+          staff: { select: { id: true, firstName: true, lastName: true } },
+          service: { select: { id: true, name: true } },
+        },
+      });
     });
 
     // Tell the client about the new time; never blocks the reschedule.
