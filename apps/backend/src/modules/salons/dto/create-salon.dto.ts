@@ -7,7 +7,6 @@ import {
   IsLongitude,
   IsNotEmpty,
   IsOptional,
-  IsPhoneNumber,
   IsString,
   IsUrl,
   Length,
@@ -31,7 +30,7 @@ export class CreateSalonDto {
   description?: string;
 
   @ApiPropertyOptional({ example: '+40712345678' })
-  @IsPhoneNumber()
+  @IsString()
   @IsOptional()
   phone?: string;
 
@@ -44,6 +43,11 @@ export class CreateSalonDto {
   @IsUrl()
   @IsOptional()
   websiteUrl?: string;
+
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/salon-logo.jpg' })
+  @IsUrl()
+  @IsOptional()
+  logoUrl?: string;
 
   // ── Address ───────────────────────────────────────────────────────────────
   @ApiProperty({ example: 'Strada Florilor 12' })
@@ -76,15 +80,18 @@ export class CreateSalonDto {
   @IsOptional()
   postalCode?: string;
 
-  @ApiProperty({ example: 44.4268 })
+  // Optional — defaults to center of Bucharest when not provided
+  @ApiPropertyOptional({ example: 44.4268 })
   @IsLatitude()
+  @IsOptional()
   @Type(() => Number)
-  latitude: number;
+  latitude?: number;
 
-  @ApiProperty({ example: 26.1025 })
+  @ApiPropertyOptional({ example: 26.1025 })
   @IsLongitude()
+  @IsOptional()
   @Type(() => Number)
-  longitude: number;
+  longitude?: number;
 
   // ── Booking policy ────────────────────────────────────────────────────────
   @ApiPropertyOptional({ default: false })

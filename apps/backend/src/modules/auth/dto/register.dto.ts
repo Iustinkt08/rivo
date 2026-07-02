@@ -1,14 +1,21 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
-  IsEnum,
+  IsIn,
   IsNotEmpty,
   IsOptional,
-  IsPhoneNumber,
   IsString,
+  IsUrl,
   Length,
 } from 'class-validator';
 import { UserRole } from '@prisma/client';
+
+// Roles a user may pick for THEMSELVES. STAFF_MEMBER accounts are created only
+// by salon owners, and SUPER_ADMIN must never be self-assignable.
+export const SELF_ASSIGNABLE_ROLES = [
+  UserRole.CLIENT,
+  UserRole.ADMIN_SALON,
+] as const;
 
 export class RegisterDto {
   @ApiProperty({ example: 'Andrei' })
@@ -29,12 +36,20 @@ export class RegisterDto {
   email?: string;
 
   @ApiPropertyOptional({ example: '+40712345678' })
-  @IsPhoneNumber()
+  @IsString()
   @IsOptional()
   phone?: string;
 
-  @ApiPropertyOptional({ enum: UserRole, default: UserRole.CLIENT })
-  @IsEnum(UserRole)
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/avatars/123.jpg' })
+  @IsUrl()
   @IsOptional()
-  role?: UserRole;
+  avatarUrl?: string;
+
+  @ApiPropertyOptional({
+    enum: SELF_ASSIGNABLE_ROLES,
+    default: UserRole.CLIENT,
+  })
+  @IsIn(SELF_ASSIGNABLE_ROLES)
+  @IsOptional()
+  role?: (typeof SELF_ASSIGNABLE_ROLES)[number];
 }

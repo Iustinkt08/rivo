@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { AppointmentStatus } from '@prisma/client';
 
 export class UpdateAppointmentDto {
@@ -8,9 +8,6 @@ export class UpdateAppointmentDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(1000)
   internalNotes?: string;
-
-  @IsOptional()
-  @IsString()
-  cancelledBy?: string;
 }

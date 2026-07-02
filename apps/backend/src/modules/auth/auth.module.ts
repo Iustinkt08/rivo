@@ -1,21 +1,18 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { StaffAuthService } from './staff-auth.service';
 import { SupabaseAuthGuard } from './guards/supabase-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 
 @Module({
-  imports: [
-    JwtModule.register({
-      secret: process.env.SUPABASE_JWT_SECRET,
-      signOptions: { algorithm: 'HS256' },
-    }),
-  ],
+  imports: [ConfigModule],
   controllers: [AuthController],
   providers: [
     AuthService,
+    StaffAuthService,
     SupabaseAuthGuard,
     RolesGuard,
     // Register SupabaseAuthGuard globally so every route is protected by default.

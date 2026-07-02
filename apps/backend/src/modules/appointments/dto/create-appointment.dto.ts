@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsEnum,
+  MaxLength,
 } from 'class-validator';
 import { BookingSource } from '@prisma/client';
 
@@ -22,6 +23,7 @@ export class CreateAppointmentDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   sessionId?: string; // to release the slot lock after booking
 
   @IsOptional()
@@ -30,13 +32,16 @@ export class CreateAppointmentDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   guestName?: string; // for WALK_IN / PHONE bookings
 
   @IsOptional()
   @IsString()
+  @MaxLength(30)
   guestPhone?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(300)
   clientNotes?: string;
 }

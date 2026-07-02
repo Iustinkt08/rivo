@@ -33,7 +33,11 @@ export class SalonQueryDto {
   @Type(() => Number)
   lng?: number;
 
-  @ApiPropertyOptional({ example: 10, default: 10, description: 'Search radius in km' })
+  @ApiPropertyOptional({
+    example: 10,
+    default: 10,
+    description: 'Search radius in km',
+  })
   @IsNumber()
   @Min(0.5)
   @Max(100)
@@ -42,7 +46,10 @@ export class SalonQueryDto {
   radiusKm?: number = 10;
 
   // ── Text + filters ────────────────────────────────────────────────────────
-  @ApiPropertyOptional({ example: 'bella', description: 'Search by salon name' })
+  @ApiPropertyOptional({
+    example: 'bella',
+    description: 'Search by salon name',
+  })
   @IsString()
   @IsOptional()
   search?: string;
@@ -52,7 +59,17 @@ export class SalonQueryDto {
   @IsOptional()
   categoryId?: string;
 
-  @ApiPropertyOptional({ example: 4, description: 'Minimum average rating (1-5)' })
+  @ApiPropertyOptional({
+    description: 'Filter by category name (case-insensitive)',
+  })
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @ApiPropertyOptional({
+    example: 4,
+    description: 'Minimum average rating (1-5)',
+  })
   @IsNumber()
   @Min(1)
   @Max(5)

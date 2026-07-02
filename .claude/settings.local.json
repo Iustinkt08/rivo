@@ -8,7 +8,40 @@
       "Bash(npm install:*)",
       "Bash(npx expo:*)",
       "Bash(npx prisma:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(curl -s https://lophmenyczotoajqamgw.supabase.co/rest/v1/ -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcGhtZW55Y3pvdG9hanFhbWd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyNTMyNDAsImV4cCI6MjA5MTgyOTI0MH0.HuK7K_uElKYV86tk6Msrbo4ndIcMLbRYkdvjYz1Lz1I' -o /dev/null -w '%{http_code}')",
+      "Bash(node -e ' *)",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(ipconfig getifaddr *)",
+      "Bash(curl -s http://localhost:3000/api/v1/auth/verify -X POST -H \"Content-Type: application/json\" -w \"\\\\nHTTP %{http_code}\")",
+      "Bash(node -e \"require\\('dotenv/config'\\); const s = process.env.SUPABASE_JWT_SECRET; console.log\\('Secret length:', s?.length, '| First 10:', s?.slice\\(0,10\\)\\);\")",
+      "Bash(curl -s https://lophmenyczotoajqamgw.supabase.co/auth/v1/.well-known/jwks.json)",
+      "Bash(python3 -m json.tool)",
+      "Bash(node -e \"const j = require\\('jose'\\); console.log\\(typeof j.jwtVerify\\);\")",
+      "Bash(node -e \"const t = 'eyJhbGciOiJFUzI1NiIsImtpZCI6IjEyMyJ9'; console.log\\(Buffer.from\\(t, 'base64'\\).toString\\(\\)\\); console.log\\(Buffer.from\\(t, 'base64url'\\).toString\\(\\)\\);\")",
+      "Bash(curl -s \"https://lophmenyczotoajqamgw.supabase.co/auth/v1/.well-known/jwks.json\")",
+      "Bash(pkill -f \"ts-node\\\\|nest start\\\\|node.*dist/main\")",
+      "Bash(npm run *)",
+      "Bash(echo \"Backend starting with PID $!\")",
+      "Bash(sleep 6 && tail -30 /tmp/backend.log)",
+      "Read(//private/tmp/**)",
+      "Bash(xargs kill -9)",
+      "Bash(echo \"Backend starting PID $!\")",
+      "Bash(echo \"PID $!\")",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(pkill -f \"nest start\")",
+      "Bash(pkill -f \"ts-node\")",
+      "Bash(curl -s http://localhost:3000/api/v1/salons?limit=1)",
+      "Bash(npm run backend > /tmp/backend.log 2>&1 & *)",
+      "Bash(curl -s http://localhost:3000/api/v1/salons)",
+      "Bash(rm -rf /tmp/everything-claude-code)",
+      "Bash(git clone *)",
+      "Bash(xargs cat)"
+    ],
+    "additionalDirectories": [
+      "/private/tmp"
     ]
   }
 }

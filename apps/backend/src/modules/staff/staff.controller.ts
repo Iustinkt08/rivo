@@ -15,6 +15,10 @@ import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { SetScheduleDto } from './dto/set-schedule.dto';
 import { CreateTimeOffDto } from './dto/create-time-off.dto';
+import {
+  CreateStaffCredentialsDto,
+  ResetStaffCredentialsDto,
+} from './dto/staff-credentials.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -32,10 +36,26 @@ export class StaffController {
     return this.staffService.findAll(salonId);
   }
 
+  // Declared before ':staffId' so the literal segment isn't shadowed.
+  @Get('manage')
+  @Roles('ADMIN_SALON')
+  @ApiOperation({
+    summary: 'Owner-facing staff list (includes login usernames)',
+  })
+  findAllForOwner(
+    @Param('salonId') salonId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.staffService.findAllForOwner(salonId, userId);
+  }
+
   @Public()
   @Get(':staffId')
   @ApiOperation({ summary: 'Get staff member details' })
-  findOne(@Param('salonId') salonId: string, @Param('staffId') staffId: string) {
+  findOne(
+    @Param('salonId') salonId: string,
+    @Param('staffId') staffId: string,
+  ) {
     return this.staffService.findOne(salonId, staffId);
   }
 
@@ -60,6 +80,32 @@ export class StaffController {
     @Body() dto: UpdateStaffDto,
   ) {
     return this.staffService.update(salonId, staffId, userId, dto);
+  }
+
+  // ─── Login credentials (owner-managed; password is returned exactly once) ───
+
+  @Post(':staffId/credentials')
+  @Roles('ADMIN_SALON')
+  @ApiOperation({ summary: 'Create login credentials for a staff member' })
+  createCredentials(
+    @Param('salonId') salonId: string,
+    @Param('staffId') staffId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateStaffCredentialsDto,
+  ) {
+    return this.staffService.createCredentials(salonId, staffId, userId, dto);
+  }
+
+  @Patch(':staffId/credentials')
+  @Roles('ADMIN_SALON')
+  @ApiOperation({ summary: "Reset a staff member's password" })
+  resetCredentials(
+    @Param('salonId') salonId: string,
+    @Param('staffId') staffId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: ResetStaffCredentialsDto,
+  ) {
+    return this.staffService.resetCredentials(salonId, staffId, userId, dto);
   }
 
   @Delete(':staffId')

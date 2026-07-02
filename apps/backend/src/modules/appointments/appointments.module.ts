@@ -3,10 +3,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppointmentsController } from './appointments.controller';
 import { AppointmentsService } from './appointments.service';
 import { SlotLockService } from './slot-lock.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 import Redis from 'ioredis';
 
 @Module({
-  imports: [ConfigModule],
+  imports: [ConfigModule, NotificationsModule],
   controllers: [AppointmentsController],
   providers: [
     AppointmentsService,
@@ -19,10 +20,16 @@ import Redis from 'ioredis';
           port: configService.get<number>('REDIS_PORT', 6379),
           password: configService.get<string>('REDIS_PASSWORD'),
           lazyConnect: true,
+          // Fail fast when Redis is down: commands reject immediately instead
+          // of buffering forever, so SlotLockService can degrade gracefully.
+          maxRetriesPerRequest: 1,
+          enableOfflineQueue: false,
         });
 
         client.on('error', (err) => {
-          console.error('[Redis] Connection error:', err.message);
+          console.error(
+            `[Redis] Connection error: ${err.message || String(err)}`,
+          );
         });
 
         return client;

@@ -9,6 +9,8 @@ export class AuthUserDto {
   @ApiPropertyOptional() email?: string | null;
   @ApiPropertyOptional() phone?: string | null;
   @ApiPropertyOptional() avatarUrl?: string | null;
+  @ApiPropertyOptional() dateOfBirth?: Date | null;
+  @ApiPropertyOptional() gender?: string | null;
   @ApiProperty() isActive: boolean;
   @ApiProperty() createdAt: Date;
 }
@@ -16,4 +18,9 @@ export class AuthUserDto {
 export class AuthResponseDto {
   @ApiProperty({ type: AuthUserDto }) user: AuthUserDto;
   @ApiProperty({ example: true }) isNewUser: boolean;
+  @ApiProperty({
+    example: false,
+    description: 'True if the user administers at least one salon',
+  })
+  hasSalon: boolean;
 }

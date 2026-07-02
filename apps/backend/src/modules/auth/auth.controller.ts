@@ -7,7 +7,6 @@ import {
   HttpStatus,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -17,14 +16,16 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { User } from '@prisma/client';
+import { Throttle, seconds } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { SupabaseAuthGuard } from './guards/supabase-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
+import { StaffAuthService } from './staff-auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
+import { StaffLoginDto } from './dto/staff-login.dto';
+import { StaffChangePasswordDto } from './dto/staff-change-password.dto';
 
 /**
  * Auth flow:
@@ -33,12 +34,53 @@ import { AuthResponseDto, AuthUserDto } from './dto/auth-response.dto';
  *  3. POST /auth/verify  → backend verifies token, upserts user, returns profile
  *  4. All other protected routes use the same Bearer token per request
  */
+// SupabaseAuthGuard + RolesGuard are registered globally (APP_GUARD in AuthModule).
+// Do NOT re-apply them here: a second guard run re-fetches the user and
+// overwrites request.user, losing the isNewUser flag from the first run.
+
+// Token verification + profile writes are brute-force targets — keep tight
+// (global default is 100/min).
+const AUTH_LIMIT = { default: { limit: 5, ttl: seconds(60) } };
+
 @ApiTags('Auth')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly staffAuthService: StaffAuthService,
+  ) {}
+
+  /**
+   * Username + password login for salon staff accounts (backend-issued JWT,
+   * independent of Supabase). Same generic 401 on every failure path.
+   */
+  @Public()
+  @Post('staff/login')
+  @Throttle(AUTH_LIMIT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Staff login with username + password' })
+  staffLogin(@Body() dto: StaffLoginDto) {
+    return this.staffAuthService.login(dto.username, dto.password);
+  }
+
+  /**
+   * Staff changes their own password (requires the current one).
+   */
+  @Post('staff/change-password')
+  @Throttle(AUTH_LIMIT)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Staff changes their own password' })
+  async staffChangePassword(
+    @CurrentUser('id') userId: string,
+    @Body() dto: StaffChangePasswordDto,
+  ): Promise<void> {
+    await this.staffAuthService.changePassword(
+      userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+  }
 
   /**
    * Called once after Firebase login to fetch or create the server-side user.
@@ -46,13 +88,17 @@ export class AuthController {
    * so the mobile app can redirect to the profile completion screen.
    */
   @Post('verify')
+  @Throttle(AUTH_LIMIT)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify Firebase token & upsert user' })
   @ApiOkResponse({ type: AuthResponseDto })
-  async verify(@CurrentUser() user: User & { isNewUser?: boolean }): Promise<AuthResponseDto> {
+  async verify(
+    @CurrentUser() user: User & { isNewUser?: boolean },
+  ): Promise<AuthResponseDto> {
     return {
       user: this.sanitize(user),
       isNewUser: user.isNewUser ?? false,
+      hasSalon: await this.authService.hasSalon(user.id),
     };
   }
 
@@ -61,6 +107,7 @@ export class AuthController {
    * Lets the user complete their name, phone, and choose a role (CLIENT vs ADMIN_SALON).
    */
   @Post('complete-profile')
+  @Throttle(AUTH_LIMIT)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Complete profile after first login' })
   @ApiCreatedResponse({ type: AuthUserDto })
@@ -123,6 +170,8 @@ export class AuthController {
       email: user.email,
       phone: user.phone,
       avatarUrl: user.avatarUrl,
+      dateOfBirth: (user as any).dateOfBirth ?? null,
+      gender: (user as any).gender ?? null,
       role: user.role,
       isActive: user.isActive,
       createdAt: user.createdAt,

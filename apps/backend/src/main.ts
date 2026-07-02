@@ -18,11 +18,14 @@ async function bootstrap() {
     }),
   );
 
-  // CORS
+  // CORS — mobile clients use Bearer tokens (no Origin header), so '*' without credentials
+  // is correct for them. A browser frontend must be named via FRONTEND_URL to allow
+  // credentials ('*' + credentials:true is an invalid combo browsers reject).
+  const frontendUrl = process.env.FRONTEND_URL;
   app.enableCors({
-    origin: process.env.FRONTEND_URL ?? '*',
+    origin: frontendUrl ?? '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    credentials: true,
+    credentials: Boolean(frontendUrl),
   });
 
   // Swagger (dev only)

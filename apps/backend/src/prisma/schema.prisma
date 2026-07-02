@@ -71,6 +71,8 @@ model User {
   firstName     String
   lastName      String
   avatarUrl     String?
+  dateOfBirth   DateTime?
+  gender        String?
   role          UserRole  @default(CLIENT)
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
@@ -83,8 +85,30 @@ model User {
   salonAdminOf        Salon[]         @relation("SalonAdmin")
   notifications       Notification[]
   pushTokens          PushToken[]
+  addresses           UserAddress[]
 
   @@map("users")
+}
+
+model UserAddress {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label        String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  county       String?
+  country      String   @default("RO")
+  postalCode   String?
+  latitude     Float?
+  longitude    Float?
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@map("user_addresses")
 }
 
 // =============================================================================
@@ -245,9 +269,15 @@ model Staff {
   user        User?    @relation(fields: [userId], references: [id])
   firstName   String
   lastName    String
+  specialty   String?  // client-facing role label, e.g. "Hairstylist"
+  avatarEmoji String?  // emoji avatar fallback when no photo is set
   avatarUrl   String?
   bio         String?
   phone       String?
+  // Backend-issued staff login (salon-scoped account). passwordHash must NEVER
+  // be exposed through any API response.
+  username    String?  @unique
+  passwordHash String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

@@ -57,6 +57,8 @@ export class SalonsService {
         slug,
         country: dto.country ?? 'RO',
         cancellationHours: dto.cancellationHours ?? 24,
+        latitude: dto.latitude ?? 44.4268,
+        longitude: dto.longitude ?? 26.1025,
         adminId,
       },
     });
@@ -64,13 +66,36 @@ export class SalonsService {
 
   // ── Search / List ─────────────────────────────────────────────────────────
 
+  async findAllCategories() {
+    return this.prisma.category.findMany({
+      select: { id: true, name: true, iconUrl: true, sortOrder: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+  }
+
+  private async resolveCategoryId(
+    categoryId?: string,
+    categoryName?: string,
+  ): Promise<string | undefined> {
+    if (categoryId) return categoryId;
+    if (!categoryName) return undefined;
+    const cat = await this.prisma.category.findFirst({
+      where: {
+        name: { equals: categoryName, mode: Prisma.QueryMode.insensitive },
+      },
+      select: { id: true },
+    });
+    return cat?.id;
+  }
+
   async findAll(query: SalonQueryDto): Promise<PaginatedSalonsDto> {
     const {
       lat,
       lng,
       radiusKm = 10,
       search,
-      categoryId,
+      categoryId: rawCategoryId,
+      category: categoryName,
       minRating,
       city,
       sortBy = SalonSortBy.DISTANCE,
@@ -78,18 +103,47 @@ export class SalonsService {
       limit = 20,
     } = query;
 
+    const categoryId = await this.resolveCategoryId(
+      rawCategoryId,
+      categoryName,
+    );
+
+    // When a category name was given but no matching category exists → empty results
+    if (categoryName && !rawCategoryId && categoryId === undefined) {
+      return { data: [], total: 0, page, limit, hasNextPage: false };
+    }
+
     const useGeo = lat !== undefined && lng !== undefined;
 
     // ── Geo search via Haversine (raw SQL) ──────────────────────────────────
     if (useGeo) {
-      return this.findAllGeo({ lat: lat!, lng: lng!, radiusKm, search, categoryId, minRating, page, limit });
+      return this.findAllGeo({
+        lat: lat!,
+        lng: lng!,
+        radiusKm,
+        search,
+        categoryId,
+        minRating,
+        page,
+        limit,
+      });
     }
 
     // ── Standard Prisma query (no geo) ─────────────────────────────────────
     const where: Prisma.SalonWhereInput = {
       isActive: true,
       ...(search && {
-        name: { contains: search, mode: Prisma.QueryMode.insensitive },
+        OR: [
+          { name: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          {
+            services: {
+              some: {
+                name: { contains: search, mode: Prisma.QueryMode.insensitive },
+                isActive: true,
+              },
+            },
+          },
+        ],
       }),
       ...(city && {
         city: { equals: city, mode: Prisma.QueryMode.insensitive },
@@ -104,8 +158,8 @@ export class SalonsService {
       sortBy === SalonSortBy.RATING
         ? { averageRating: 'desc' }
         : sortBy === SalonSortBy.NAME
-        ? { name: 'asc' }
-        : { averageRating: 'desc' }; // fallback when no geo
+          ? { name: 'asc' }
+          : { averageRating: 'desc' }; // fallback when no geo
 
     const [salons, total] = await Promise.all([
       this.prisma.salon.findMany({
@@ -141,12 +195,26 @@ export class SalonsService {
     page: number;
     limit: number;
   }): Promise<PaginatedSalonsDto> {
-    const { lat, lng, radiusKm, search, categoryId, minRating, page, limit } = params;
+    const { lat, lng, radiusKm, search, categoryId, minRating, page, limit } =
+      params;
     const offset = (page - 1) * limit;
 
     // Build optional filter clauses
-    const searchFilter = search ? Prisma.sql`AND s.name ILIKE ${'%' + search + '%'}` : Prisma.empty;
-    const ratingFilter = minRating != null ? Prisma.sql`AND s."averageRating" >= ${minRating}` : Prisma.empty;
+    const searchFilter = search
+      ? Prisma.sql`AND (
+          s.name ILIKE ${'%' + search + '%'}
+          OR EXISTS (
+            SELECT 1 FROM services sv
+            WHERE sv."salonId" = s.id
+              AND sv."isActive" = true
+              AND sv.name ILIKE ${'%' + search + '%'}
+          )
+        )`
+      : Prisma.empty;
+    const ratingFilter =
+      minRating != null
+        ? Prisma.sql`AND s."averageRating" >= ${minRating}`
+        : Prisma.empty;
     const categoryFilter = categoryId
       ? Prisma.sql`AND EXISTS (
           SELECT 1 FROM salon_categories sc
@@ -236,8 +304,9 @@ export class SalonsService {
   // ── Public profile ────────────────────────────────────────────────────────
 
   async findBySlug(slug: string): Promise<SalonProfileDto> {
-    const salon = await this.prisma.salon.findUnique({
-      where: { slug },
+    // Accept both the slug and the salon id — mobile lists navigate by id.
+    const salon = await this.prisma.salon.findFirst({
+      where: { OR: [{ slug }, { id: slug }] },
       include: {
         openingHours: { orderBy: { dayOfWeek: 'asc' } },
         gallery: { orderBy: { sortOrder: 'asc' } },
@@ -260,12 +329,21 @@ export class SalonsService {
 
   // ── Update ────────────────────────────────────────────────────────────────
 
-  async update(salonId: string, userId: string, dto: UpdateSalonDto, userRole: UserRole): Promise<Salon> {
+  async update(
+    salonId: string,
+    userId: string,
+    dto: UpdateSalonDto,
+    userRole: UserRole,
+  ): Promise<Salon> {
     await this.assertOwner(salonId, userId, userRole);
     return this.prisma.salon.update({ where: { id: salonId }, data: dto });
   }
 
-  async deactivate(salonId: string, userId: string, userRole: UserRole): Promise<void> {
+  async deactivate(
+    salonId: string,
+    userId: string,
+    userRole: UserRole,
+  ): Promise<void> {
     await this.assertOwner(salonId, userId, userRole);
     await this.prisma.salon.update({
       where: { id: salonId },
@@ -275,15 +353,30 @@ export class SalonsService {
 
   // ── Opening Hours ─────────────────────────────────────────────────────────
 
-  async setOpeningHours(salonId: string, userId: string, dto: SetOpeningHoursDto, userRole: UserRole) {
+  async setOpeningHours(
+    salonId: string,
+    userId: string,
+    dto: SetOpeningHoursDto,
+    userRole: UserRole,
+  ) {
     await this.assertOwner(salonId, userId, userRole);
 
     // Upsert each day atomically
     const ops = dto.hours.map((h) =>
       this.prisma.openingHours.upsert({
         where: { salonId_dayOfWeek: { salonId, dayOfWeek: h.dayOfWeek } },
-        update: { openTime: h.openTime, closeTime: h.closeTime, isClosed: h.isClosed ?? false },
-        create: { salonId, dayOfWeek: h.dayOfWeek, openTime: h.openTime, closeTime: h.closeTime, isClosed: h.isClosed ?? false },
+        update: {
+          openTime: h.openTime,
+          closeTime: h.closeTime,
+          isClosed: h.isClosed ?? false,
+        },
+        create: {
+          salonId,
+          dayOfWeek: h.dayOfWeek,
+          openTime: h.openTime,
+          closeTime: h.closeTime,
+          isClosed: h.isClosed ?? false,
+        },
       }),
     );
 
@@ -299,7 +392,13 @@ export class SalonsService {
 
   // ── Photos ────────────────────────────────────────────────────────────────
 
-  async addPhoto(salonId: string, userId: string, url: string, caption?: string, userRole?: UserRole) {
+  async addPhoto(
+    salonId: string,
+    userId: string,
+    url: string,
+    caption?: string,
+    userRole?: UserRole,
+  ) {
     await this.assertOwner(salonId, userId, userRole);
 
     const maxOrder = await this.prisma.salonPhoto.aggregate({
@@ -308,11 +407,21 @@ export class SalonsService {
     });
 
     return this.prisma.salonPhoto.create({
-      data: { salonId, url, caption, sortOrder: (maxOrder._max.sortOrder ?? -1) + 1 },
+      data: {
+        salonId,
+        url,
+        caption,
+        sortOrder: (maxOrder._max.sortOrder ?? -1) + 1,
+      },
     });
   }
 
-  async removePhoto(photoId: string, salonId: string, userId: string, userRole?: UserRole) {
+  async removePhoto(
+    photoId: string,
+    salonId: string,
+    userId: string,
+    userRole?: UserRole,
+  ) {
     await this.assertOwner(salonId, userId, userRole);
     await this.prisma.salonPhoto.delete({ where: { id: photoId } });
   }
@@ -328,17 +437,25 @@ export class SalonsService {
         _count: { select: { services: true, staff: true } },
       },
     });
-    if (!salon) throw new NotFoundException('You have no salon yet. Create one first.');
+    if (!salon)
+      throw new NotFoundException('You have no salon yet. Create one first.');
     return this.toProfile(salon);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  private async assertOwner(salonId: string, userId: string, userRole?: UserRole): Promise<Salon> {
-    const salon = await this.prisma.salon.findUnique({ where: { id: salonId } });
+  private async assertOwner(
+    salonId: string,
+    userId: string,
+    userRole?: UserRole,
+  ): Promise<Salon> {
+    const salon = await this.prisma.salon.findUnique({
+      where: { id: salonId },
+    });
     if (!salon) throw new NotFoundException('Salon not found');
     if (userRole === UserRole.SUPER_ADMIN) return salon;
-    if (salon.adminId !== userId) throw new ForbiddenException('You are not the owner of this salon');
+    if (salon.adminId !== userId)
+      throw new ForbiddenException('You are not the owner of this salon');
     return salon;
   }
 
@@ -346,7 +463,7 @@ export class SalonsService {
     const base = name
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')  // remove diacritics
+      .replace(/[\u0300-\u036f]/g, '') // remove diacritics
       .replace(/[^a-z0-9\s-]/g, '')
       .trim()
       .replace(/\s+/g, '-');
@@ -379,8 +496,18 @@ export class SalonsService {
 
   private toProfile(
     s: Salon & {
-      openingHours: { dayOfWeek: any; openTime: string; closeTime: string; isClosed: boolean }[];
-      gallery: { id: string; url: string; caption: string | null; sortOrder: number }[];
+      openingHours: {
+        dayOfWeek: any;
+        openTime: string;
+        closeTime: string;
+        isClosed: boolean;
+      }[];
+      gallery: {
+        id: string;
+        url: string;
+        caption: string | null;
+        sortOrder: number;
+      }[];
       _count: { services: number; staff: number };
     },
   ): SalonProfileDto {
