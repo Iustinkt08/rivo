@@ -4,10 +4,11 @@ import { AppointmentsController } from './appointments.controller';
 import { AppointmentsService } from './appointments.service';
 import { SlotLockService } from './slot-lock.service';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { DiscountsModule } from '../discounts/discounts.module';
 import Redis from 'ioredis';
 
 @Module({
-  imports: [ConfigModule, NotificationsModule],
+  imports: [ConfigModule, NotificationsModule, DiscountsModule],
   controllers: [AppointmentsController],
   providers: [
     AppointmentsService,

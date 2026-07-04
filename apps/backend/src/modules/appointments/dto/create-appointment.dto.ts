@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsEnum,
+  Length,
   MaxLength,
 } from 'class-validator';
 import { BookingSource } from '@prisma/client';
@@ -44,4 +45,10 @@ export class CreateAppointmentDto {
   @IsString()
   @MaxLength(300)
   clientNotes?: string;
+
+  /** Discount code applied at checkout — re-validated server-side in create(). */
+  @IsOptional()
+  @IsString()
+  @Length(3, 24)
+  discountCode?: string;
 }

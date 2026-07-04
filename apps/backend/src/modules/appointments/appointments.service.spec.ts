@@ -10,6 +10,13 @@ import { AppointmentsService, salonDayWindow } from './appointments.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SlotLockService } from './slot-lock.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DiscountsService } from '../discounts/discounts.service';
+
+// Shared across every block — jest.clearAllMocks() in each beforeEach resets it.
+const discountsMock = {
+  assertRedeemable: jest.fn(),
+  recordRedemption: jest.fn(),
+};
 
 describe('AppointmentsService — create', () => {
   let service: AppointmentsService;
@@ -66,6 +73,7 @@ describe('AppointmentsService — create', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
+        { provide: DiscountsService, useValue: discountsMock },
       ],
     }).compile();
 
@@ -184,6 +192,82 @@ describe('AppointmentsService — create', () => {
     expect(prismaMock.$transaction).toHaveBeenCalled();
     expect(prismaMock.appointment.create).not.toHaveBeenCalled();
   });
+
+  it('books without touching the discount services when no code is sent', async () => {
+    // Act
+    await service.create(CLIENT_ID, dto);
+
+    // Assert
+    expect(discountsMock.assertRedeemable).not.toHaveBeenCalled();
+    expect(discountsMock.recordRedemption).not.toHaveBeenCalled();
+    const data = prismaMock.appointment.create.mock.calls[0][0].data;
+    expect(data.discountAmount).toBeUndefined();
+  });
+
+  it('applies a valid discount code: discountAmount set + redemption recorded in tx', async () => {
+    // Arrange
+    const validated = {
+      codeId: 'code-1',
+      code: 'VARA-2026',
+      type: 'PERCENT',
+      value: 20,
+      maxRedemptions: 5,
+      discountAmount: 20,
+      finalPrice: 80,
+    };
+    discountsMock.assertRedeemable.mockResolvedValue(validated);
+
+    // Act
+    await service.create(CLIENT_ID, { ...dto, discountCode: 'vara-2026' });
+
+    // Assert — validation re-ran with the tx client and the booking's context
+    expect(discountsMock.assertRedeemable).toHaveBeenCalledWith(prismaMock, {
+      salonId: dto.salonId,
+      code: 'vara-2026',
+      serviceId: dto.serviceId,
+      clientId: CLIENT_ID,
+    });
+    const data = prismaMock.appointment.create.mock.calls[0][0].data;
+    expect(data.discountAmount).toBe(20);
+    expect(discountsMock.recordRedemption).toHaveBeenCalledWith(prismaMock, {
+      validated,
+      appointmentId: 'appt-1',
+      clientId: CLIENT_ID,
+    });
+  });
+
+  it('rejects the whole booking when the discount code is invalid', async () => {
+    // Arrange
+    discountsMock.assertRedeemable.mockRejectedValue(
+      new BadRequestException('Codul de reducere a expirat.'),
+    );
+
+    // Act + Assert — booking NOT created, nothing redeemed
+    await expect(
+      service.create(CLIENT_ID, { ...dto, discountCode: 'EXPIRED-1' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+    expect(discountsMock.recordRedemption).not.toHaveBeenCalled();
+  });
+
+  it('rolls the booking back when the redemption cap re-check fails', async () => {
+    // Arrange — validation passes, but the in-tx cap re-check throws
+    discountsMock.assertRedeemable.mockResolvedValue({
+      codeId: 'code-1',
+      maxRedemptions: 5,
+      discountAmount: 20,
+    });
+    discountsMock.recordRedemption.mockRejectedValue(
+      new BadRequestException(
+        'Codul de reducere a atins numărul maxim de utilizări.',
+      ),
+    );
+
+    // Act + Assert — the error escapes the $transaction → full rollback
+    await expect(
+      service.create(CLIENT_ID, { ...dto, discountCode: 'VARA-2026' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 });
 
 describe('AppointmentsService — updateStatus time gating', () => {
@@ -219,6 +303,7 @@ describe('AppointmentsService — updateStatus time gating', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
+        { provide: DiscountsService, useValue: discountsMock },
       ],
     }).compile();
 
@@ -336,6 +421,7 @@ describe('AppointmentsService — reschedule', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
+        { provide: DiscountsService, useValue: discountsMock },
       ],
     }).compile();
 
@@ -459,6 +545,7 @@ describe('AppointmentsService — staff scoping', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
+        { provide: DiscountsService, useValue: discountsMock },
       ],
     }).compile();
 
@@ -623,6 +710,7 @@ describe('AppointmentsService — client internalNotes guard', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
+        { provide: DiscountsService, useValue: discountsMock },
       ],
     }).compile();
 
@@ -695,6 +783,7 @@ describe('AppointmentsService — status-change notifications', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
+        { provide: DiscountsService, useValue: discountsMock },
       ],
     }).compile();
 

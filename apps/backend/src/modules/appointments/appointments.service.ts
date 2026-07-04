@@ -12,6 +12,7 @@ import {
   NotificationsService,
   NotificationType,
 } from '../notifications/notifications.service';
+import { DiscountsService } from '../discounts/discounts.service';
 import { AvailabilityQueryDto } from './dto/availability-query.dto';
 import { LockSlotDto } from './dto/lock-slot.dto';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -78,6 +79,7 @@ export class AppointmentsService {
     private readonly prisma: PrismaService,
     private readonly slotLock: SlotLockService,
     private readonly notifications: NotificationsService,
+    private readonly discounts: DiscountsService,
   ) {}
 
   // ─── Access helpers ──────────────────────────────────────────────────────────
@@ -513,6 +515,9 @@ export class AppointmentsService {
 
     // Overlap check + insert run in one transaction so two concurrent bookings
     // for the same staff/slot can't both pass the check and both commit (TOCTOU).
+    // Discount validation + redemption live in the same transaction: an invalid
+    // code rejects the whole booking, and the redemption row can never exist
+    // without its appointment (or vice versa).
     const appointment = await this.prisma.$transaction(async (tx) => {
       const overlap = await tx.appointment.findFirst({
         where: {
@@ -527,7 +532,20 @@ export class AppointmentsService {
       if (overlap)
         throw new ConflictException('The selected slot is no longer available');
 
-      return tx.appointment.create({
+      // Re-run the FULL discount validation with the tx client — the checkout
+      // preview (POST validate) guarantees nothing at booking time.
+      // amountApplied derives from priceSnapshot (= service.price, fetched
+      // above); client-supplied amounts are never trusted.
+      const validatedDiscount = dto.discountCode
+        ? await this.discounts.assertRedeemable(tx, {
+            salonId: dto.salonId,
+            code: dto.discountCode,
+            serviceId: dto.serviceId,
+            clientId,
+          })
+        : null;
+
+      const created = await tx.appointment.create({
         data: {
           clientId,
           salonId: dto.salonId,
@@ -541,6 +559,7 @@ export class AppointmentsService {
           clientNotes: dto.clientNotes,
           priceSnapshot: service.price,
           currency: service.currency,
+          discountAmount: validatedDiscount?.discountAmount,
           status: AppointmentStatus.PENDING,
         },
         include: {
@@ -562,6 +581,19 @@ export class AppointmentsService {
           },
         },
       });
+
+      // Audit-trail row + final total-cap re-check (still inside the tx):
+      // parallel bookings that both passed assertRedeemable roll back here
+      // instead of exceeding maxRedemptions.
+      if (validatedDiscount) {
+        await this.discounts.recordRedemption(tx, {
+          validated: validatedDiscount,
+          appointmentId: created.id,
+          clientId,
+        });
+      }
+
+      return created;
     });
 
     // Ensure the client appears in the salon's client list (idempotent);
