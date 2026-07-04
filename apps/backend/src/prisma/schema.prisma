@@ -25,9 +25,15 @@ enum UserRole {
 enum AppointmentStatus {
   PENDING       // Awaiting confirmation
   CONFIRMED     // Confirmed by salon
+  REJECTED      // Rejected by salon while still pending
   CANCELLED     // Cancelled by client or salon
   COMPLETED     // Service delivered
   NO_SHOW       // Client did not appear
+}
+
+enum DiscountType {
+  PERCENT       // value = percentage 0-100
+  FIXED         // value = fixed amount in appointment currency
 }
 
 enum PaymentStatus {
@@ -86,6 +92,9 @@ model User {
   notifications       Notification[]
   pushTokens          PushToken[]
   addresses           UserAddress[]
+  notificationPreference NotificationPreference?
+  discountRedemptions    DiscountRedemption[]    @relation("ClientDiscountRedemptions")
+  punchRedemptions       PunchRedemption[]       @relation("ClientPunchRedemptions")
 
   @@map("users")
 }
@@ -165,6 +174,9 @@ model Salon {
   gallery          SalonPhoto[]
   categories       SalonCategory[]
   slotLocks        SlotLock[]
+  discountCodes    DiscountCode[]
+  punchCardConfig  PunchCardConfig?
+  punchRedemptions PunchRedemption[] @relation("SalonPunchRedemptions")
 
   @@index([latitude, longitude])
   @@index([city])
@@ -274,6 +286,12 @@ model Staff {
   avatarUrl   String?
   bio         String?
   phone       String?
+  email       String?
+  // Public profile: social links ({instagram, facebook, tiktok, ...}) and
+  // visibility toggles ({showSocials, showContact, showApptCount, showGallery}).
+  // What the client app renders is filtered by publicSettings server-side.
+  socials        Json?
+  publicSettings Json?
   // Backend-issued staff login (salon-scoped account). passwordHash must NEVER
   // be exposed through any API response.
   username    String?  @unique
@@ -287,6 +305,8 @@ model Staff {
   workSchedules   StaffSchedule[]
   appointments    Appointment[]
   timeOffBlocks   TimeOffBlock[]
+  photoCategories StaffPhotoCategory[]
+  photos          StaffPhoto[]
 
   @@index([salonId])
   @@map("staff")
@@ -369,8 +389,11 @@ model Appointment {
   guestName      String?
   guestPhone     String?
 
-  // Pricing snapshot (captured at booking time, in case prices change later)
+  // Pricing snapshot (captured at booking time, in case prices change later).
+  // discountAmount is denormalized here for cheap analytics; the audit trail
+  // lives in DiscountRedemption / PunchRedemption.
   priceSnapshot  Decimal           @db.Decimal(10, 2)
+  discountAmount Decimal?          @db.Decimal(10, 2)
   currency       String            @default("RON")
 
   // Stripe
@@ -388,6 +411,8 @@ model Appointment {
   // Relations
   review         Review?
   payment        Payment?
+  discountRedemption DiscountRedemption?
+  punchRedemption    PunchRedemption?
 
   @@index([salonId, startAt])
   @@index([staffId, startAt])
@@ -510,4 +535,136 @@ model PushToken {
   createdAt DateTime @default(now())
 
   @@map("push_tokens")
+}
+
+// =============================================================================
+// NOTIFICATION PREFERENCES (per-user opt-in/out per event type)
+// NotificationsService checks these BEFORE persisting a notification.
+// =============================================================================
+
+model NotificationPreference {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  onAccepted       Boolean  @default(true)
+  onRejected       Boolean  @default(true)
+  onCancelled      Boolean  @default(true)
+  onRescheduled    Boolean  @default(true)
+  onPriceChange    Boolean  @default(true)
+  onDurationChange Boolean  @default(true)
+  onReview         Boolean  @default(true)
+  onReminder       Boolean  @default(true)
+  updatedAt        DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
+// =============================================================================
+// STAFF PUBLIC GALLERY (photo categories rendered as slideshows on the
+// public professional profile; visibility gated by Staff.publicSettings)
+// =============================================================================
+
+model StaffPhotoCategory {
+  id        String   @id @default(uuid())
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  photos StaffPhoto[]
+
+  @@index([staffId])
+  @@map("staff_photo_categories")
+}
+
+model StaffPhoto {
+  id         String              @id @default(uuid())
+  staffId    String
+  staff      Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  categoryId String?
+  category   StaffPhotoCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  url        String
+  caption    String?
+  sortOrder  Int                 @default(0)
+  createdAt  DateTime            @default(now())
+
+  @@index([staffId])
+  @@map("staff_photos")
+}
+
+// =============================================================================
+// DISCOUNT CODES (salon-issued promo codes; validation and application happen
+// ONLY server-side at appointment creation — the client sends the raw code)
+// =============================================================================
+
+model DiscountCode {
+  id             String       @id @default(uuid())
+  salonId        String
+  salon          Salon        @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  code           String       // stored normalized (uppercase, trimmed)
+  type           DiscountType
+  value          Decimal      @db.Decimal(10, 2)
+  validFrom      DateTime?
+  validUntil     DateTime?
+  maxRedemptions Int?         // total usage cap; null = unlimited
+  maxPerClient   Int          @default(1)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  redemptions DiscountRedemption[]
+
+  @@unique([salonId, code])
+  @@map("discount_codes")
+}
+
+model DiscountRedemption {
+  id            String       @id @default(uuid())
+  codeId        String
+  code          DiscountCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  appointmentId String       @unique
+  appointment   Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  clientId      String
+  client        User         @relation("ClientDiscountRedemptions", fields: [clientId], references: [id])
+  amountApplied Decimal      @db.Decimal(10, 2)
+  createdAt     DateTime     @default(now())
+
+  @@index([codeId, clientId])
+  @@map("discount_redemptions")
+}
+
+// =============================================================================
+// PUNCH CARDS (loyalty: reward after N completed visits)
+// Progress is DERIVED server-side from COMPLETED appointments created after
+// the client's last PunchRedemption — never stored, never client-writable.
+// =============================================================================
+
+model PunchCardConfig {
+  id             String       @id @default(uuid())
+  salonId        String       @unique
+  salon          Salon        @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  isActive       Boolean      @default(false)
+  requiredVisits Int          // N completed visits to earn the reward
+  rewardType     DiscountType
+  rewardValue    Decimal      @db.Decimal(10, 2)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("punch_card_configs")
+}
+
+model PunchRedemption {
+  id            String      @id @default(uuid())
+  salonId       String
+  salon         Salon       @relation("SalonPunchRedemptions", fields: [salonId], references: [id], onDelete: Cascade)
+  clientId      String
+  client        User        @relation("ClientPunchRedemptions", fields: [clientId], references: [id])
+  appointmentId String      @unique // the appointment that received the reward
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  amountApplied Decimal     @db.Decimal(10, 2)
+  redeemedAt    DateTime    @default(now())
+
+  @@index([salonId, clientId])
+  @@map("punch_redemptions")
 }

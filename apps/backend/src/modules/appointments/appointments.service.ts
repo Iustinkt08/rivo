@@ -934,12 +934,17 @@ export class AppointmentsService {
     isClient: boolean,
   ) {
     const allowed: Record<AppointmentStatus, AppointmentStatus[]> = {
-      PENDING: [AppointmentStatus.CONFIRMED, AppointmentStatus.CANCELLED],
+      PENDING: [
+        AppointmentStatus.CONFIRMED,
+        AppointmentStatus.REJECTED,
+        AppointmentStatus.CANCELLED,
+      ],
       CONFIRMED: [
         AppointmentStatus.COMPLETED,
         AppointmentStatus.NO_SHOW,
         AppointmentStatus.CANCELLED,
       ],
+      REJECTED: [],
       CANCELLED: [],
       COMPLETED: [],
       NO_SHOW: [],
@@ -951,7 +956,7 @@ export class AppointmentsService {
       );
     }
 
-    // Clients can only cancel, not confirm/complete/no-show
+    // Clients can only cancel — confirm/reject/complete/no-show are salon actions
     if (isClient && next !== AppointmentStatus.CANCELLED) {
       throw new ForbiddenException('Clients can only cancel appointments');
     }
