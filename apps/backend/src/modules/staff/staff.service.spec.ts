@@ -98,6 +98,7 @@ describe('StaffService — findProfessionalProfile', () => {
     staff: { findFirst: jest.fn() },
     review: { findMany: jest.fn(), aggregate: jest.fn() },
     appointment: { count: jest.fn() },
+    staffPhotoCategory: { findMany: jest.fn() },
   };
 
   const STAFF_ID = 'staff-1';
@@ -111,6 +112,9 @@ describe('StaffService — findProfessionalProfile', () => {
     avatarUrl: null,
     bio: 'Bio',
     phone: '0700000000',
+    email: 'ana@example.com',
+    socials: null,
+    publicSettings: null,
     salon: { id: 'salon-1', name: 'Salon', slug: 'salon', city: 'Cluj' },
     staffServices: [
       {
@@ -137,6 +141,7 @@ describe('StaffService — findProfessionalProfile', () => {
       _count: 2,
     });
     prismaMock.appointment.count.mockResolvedValue(7);
+    prismaMock.staffPhotoCategory.findMany.mockResolvedValue([]);
     prismaMock.review.findMany.mockResolvedValue([
       {
         id: 'rev-1',
@@ -161,7 +166,6 @@ describe('StaffService — findProfessionalProfile', () => {
       services: [{ id: 'svc-1', name: 'Tuns', price: 80, durationMin: 45 }],
       averageRating: 4.5,
       reviewCount: 2,
-      appointmentCount: 7,
     });
     expect(profile.reviews).toEqual([
       expect.objectContaining({

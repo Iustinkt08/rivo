@@ -10,11 +10,13 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import type { User } from '@prisma/client';
 import { StaffService } from './staff.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { SetScheduleDto } from './dto/set-schedule.dto';
 import { CreateTimeOffDto } from './dto/create-time-off.dto';
+import { UpdateStaffProfileDto } from './dto/update-staff-profile.dto';
 import {
   CreateStaffCredentialsDto,
   ResetStaffCredentialsDto,
@@ -80,6 +82,35 @@ export class StaffController {
     @Body() dto: UpdateStaffDto,
   ) {
     return this.staffService.update(salonId, staffId, userId, dto);
+  }
+
+  // ─── Public profile self-service (staff-self OR salon owner) ────────────────
+
+  @Get(':staffId/profile')
+  @Roles('ADMIN_SALON', 'STAFF_MEMBER')
+  @ApiOperation({
+    summary: 'Editable public profile (staff self or salon owner)',
+  })
+  getProfile(
+    @Param('salonId') salonId: string,
+    @Param('staffId') staffId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.staffService.getOwnProfile(salonId, staffId, user);
+  }
+
+  @Patch(':staffId/profile')
+  @Roles('ADMIN_SALON', 'STAFF_MEMBER')
+  @ApiOperation({
+    summary: 'Update public profile (staff self or salon owner)',
+  })
+  updateProfile(
+    @Param('salonId') salonId: string,
+    @Param('staffId') staffId: string,
+    @CurrentUser() user: User,
+    @Body() dto: UpdateStaffProfileDto,
+  ) {
+    return this.staffService.updateOwnProfile(salonId, staffId, user, dto);
   }
 
   // ─── Login credentials (owner-managed; password is returned exactly once) ───

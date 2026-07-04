@@ -5,7 +5,13 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { DayOfWeek, Prisma, UserRole } from '@prisma/client';
+import {
+  AppointmentStatus,
+  DayOfWeek,
+  Prisma,
+  User,
+  UserRole,
+} from '@prisma/client';
 import { randomInt } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -13,6 +19,12 @@ import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { SetScheduleDto } from './dto/set-schedule.dto';
 import { CreateTimeOffDto } from './dto/create-time-off.dto';
+import { UpdateStaffProfileDto } from './dto/update-staff-profile.dto';
+import {
+  mergeVisibilitySettings,
+  normalizeSocials,
+  resolvePublicVisibility,
+} from './staff-profile.utils';
 
 // Default working hours for newly created staff — availability requires a
 // StaffSchedule row per day, so without these a new staff member would never
@@ -48,22 +60,41 @@ function stripSecrets<T extends { passwordHash?: string | null }>(
   return safe;
 }
 
-// PUBLIC endpoints additionally hide login identifiers and account linkage:
-// exposing `username` would hand attackers the exact login for password
-// guessing, and `phone`/`userId` are not needed by booking UIs.
+// PUBLIC endpoints additionally hide login identifiers, account linkage and
+// contact/profile internals: exposing `username` would hand attackers the
+// exact login for password guessing; `phone`/`email` visibility is governed
+// by publicSettings on the professional profile endpoint (hidden by default),
+// so the raw staff listing must not leak them either.
 function toPublicStaff<
   T extends {
     passwordHash?: string | null;
     username?: string | null;
     userId?: string | null;
     phone?: string | null;
+    email?: string | null;
+    socials?: unknown;
+    publicSettings?: unknown;
   },
->(staff: T): Omit<T, 'passwordHash' | 'username' | 'userId' | 'phone'> {
+>(
+  staff: T,
+): Omit<
+  T,
+  | 'passwordHash'
+  | 'username'
+  | 'userId'
+  | 'phone'
+  | 'email'
+  | 'socials'
+  | 'publicSettings'
+> {
   const {
     passwordHash: _passwordHash,
     username: _username,
     userId: _userId,
     phone: _phone,
+    email: _email,
+    socials: _socials,
+    publicSettings: _publicSettings,
     ...safe
   } = staff;
   return safe;
@@ -127,6 +158,15 @@ export class StaffService {
    * Full public profile for one professional: identity, salon, active services,
    * rating aggregates and latest reviews. Reviews have no staffId column, so
    * they are resolved through the appointment→staff relation.
+   *
+   * Visibility-gated fields (filtered SERVER-SIDE — hidden fields are omitted
+   * from the response entirely, the client never receives them):
+   *  - socials                     → only when publicSettings.showSocials
+   *  - phone / email               → only when publicSettings.showContact
+   *  - completedAppointmentsCount  → only when publicSettings.showApptCount
+   *  - galleryCategories           → only when publicSettings.showGallery
+   * Defaults (publicSettings null): gallery + socials shown, contact +
+   * appointment count hidden.
    */
   async findProfessionalProfile(staffId: string) {
     const staff = await this.prisma.staff.findFirst({
@@ -145,23 +185,45 @@ export class StaffService {
     });
     if (!staff) throw new NotFoundException('Professional not found');
 
+    const visibility = resolvePublicVisibility(staff.publicSettings);
+
     const reviewWhere = { isVisible: true, appointment: { staffId } };
-    const [agg, appointmentCount, reviews] = await Promise.all([
-      this.prisma.review.aggregate({
-        where: reviewWhere,
-        _avg: { rating: true },
-        _count: true,
-      }),
-      this.prisma.appointment.count({ where: { staffId } }),
-      this.prisma.review.findMany({
-        where: reviewWhere,
-        orderBy: { createdAt: 'desc' },
-        take: PROFILE_REVIEWS_LIMIT,
-        include: {
-          client: { select: { firstName: true, lastName: true } },
-        },
-      }),
-    ]);
+    const [agg, reviews, completedAppointmentsCount, galleryCategories] =
+      await Promise.all([
+        this.prisma.review.aggregate({
+          where: reviewWhere,
+          _avg: { rating: true },
+          _count: true,
+        }),
+        this.prisma.review.findMany({
+          where: reviewWhere,
+          orderBy: { createdAt: 'desc' },
+          take: PROFILE_REVIEWS_LIMIT,
+          include: {
+            client: { select: { firstName: true, lastName: true } },
+          },
+        }),
+        visibility.showApptCount
+          ? this.prisma.appointment.count({
+              where: { staffId, status: AppointmentStatus.COMPLETED },
+            })
+          : Promise.resolve(null),
+        visibility.showGallery
+          ? this.prisma.staffPhotoCategory.findMany({
+              where: { staffId },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              include: {
+                photos: {
+                  orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+                },
+              },
+            })
+          : Promise.resolve(null),
+      ]);
+
+    const socials = visibility.showSocials
+      ? normalizeSocials(staff.socials)
+      : {};
 
     return {
       id: staff.id,
@@ -172,7 +234,6 @@ export class StaffService {
       avatarEmoji: staff.avatarEmoji,
       avatarUrl: staff.avatarUrl,
       bio: staff.bio,
-      phone: staff.phone,
       salon: staff.salon,
       services: staff.staffServices.map((ss) => ({
         id: ss.service.id,
@@ -182,7 +243,6 @@ export class StaffService {
       })),
       averageRating: agg._avg.rating ?? 0,
       reviewCount: agg._count,
-      appointmentCount,
       reviews: reviews.map((r) => ({
         id: r.id,
         rating: r.rating,
@@ -190,6 +250,27 @@ export class StaffService {
         createdAt: r.createdAt,
         clientName: formatClientName(r.client),
       })),
+      // Visibility-gated fields — omitted entirely when hidden.
+      ...(Object.keys(socials).length ? { socials } : {}),
+      ...(visibility.showContact
+        ? { phone: staff.phone, email: staff.email }
+        : {}),
+      ...(completedAppointmentsCount !== null
+        ? { completedAppointmentsCount }
+        : {}),
+      ...(galleryCategories
+        ? {
+            galleryCategories: galleryCategories.map((category) => ({
+              id: category.id,
+              name: category.name,
+              photos: category.photos.map((photo) => ({
+                id: photo.id,
+                url: photo.url,
+                caption: photo.caption,
+              })),
+            })),
+          }
+        : {}),
     };
   }
 
@@ -499,6 +580,100 @@ export class StaffService {
     }
 
     return { username, password: plainPassword };
+  }
+
+  // ─── Self-service public profile (staff-self or salon owner) ─────────────────
+
+  /**
+   * Profile reads/edits are allowed to exactly two callers (mirrors the
+   * staff-gallery authorization):
+   *  - the staff member themselves — staff tokens carry sub = Staff.userId,
+   *    so `staff.userId === user.id` is the DB-backed identity check;
+   *  - the ADMIN_SALON who owns :salonId (salon.adminId === user.id).
+   * In both cases the staff member must belong to :salonId.
+   */
+  private async assertCanEditProfile(
+    salonId: string,
+    staffId: string,
+    user: User,
+  ) {
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: staffId, salonId },
+    });
+    if (!staff) throw new NotFoundException('Staff member not found');
+
+    if (user.role === UserRole.ADMIN_SALON) {
+      const salon = await this.prisma.salon.findUnique({
+        where: { id: salonId },
+      });
+      if (!salon) throw new NotFoundException('Salon not found');
+      if (salon.adminId !== user.id) {
+        throw new ForbiddenException('Not your salon');
+      }
+      return staff;
+    }
+
+    if (staff.userId && staff.userId === user.id) return staff;
+
+    throw new ForbiddenException(
+      'Only the staff member or the salon owner can edit this profile',
+    );
+  }
+
+  /** Editable profile (contact, socials, visibility) for the editor screen. */
+  async getOwnProfile(salonId: string, staffId: string, user: User) {
+    const staff = await this.assertCanEditProfile(salonId, staffId, user);
+    return stripSecrets(staff);
+  }
+
+  /**
+   * Self-service profile update. The update payload is built from an explicit
+   * field whitelist so credentials and account state (username/passwordHash/
+   * isActive/salonId) can never be touched here, whatever the request body
+   * carries. Empty strings clear optional text fields; socials handles are
+   * normalized to full https:// URLs; publicSettings merges over the stored
+   * value.
+   */
+  async updateOwnProfile(
+    salonId: string,
+    staffId: string,
+    user: User,
+    dto: UpdateStaffProfileDto,
+  ) {
+    const staff = await this.assertCanEditProfile(salonId, staffId, user);
+
+    const data: Prisma.StaffUpdateInput = {
+      ...(dto.firstName !== undefined
+        ? { firstName: dto.firstName.trim() }
+        : {}),
+      ...(dto.lastName !== undefined ? { lastName: dto.lastName.trim() } : {}),
+      ...(dto.specialty !== undefined
+        ? { specialty: dto.specialty.trim() || null }
+        : {}),
+      ...(dto.bio !== undefined ? { bio: dto.bio.trim() || null } : {}),
+      ...(dto.phone !== undefined ? { phone: dto.phone.trim() || null } : {}),
+      ...(dto.email !== undefined ? { email: dto.email.trim() || null } : {}),
+      ...(dto.avatarEmoji !== undefined
+        ? { avatarEmoji: dto.avatarEmoji }
+        : {}),
+      ...(dto.socials !== undefined
+        ? { socials: normalizeSocials(dto.socials) }
+        : {}),
+      ...(dto.publicSettings !== undefined
+        ? {
+            publicSettings: mergeVisibilitySettings(
+              staff.publicSettings,
+              dto.publicSettings,
+            ),
+          }
+        : {}),
+    };
+
+    const updated = await this.prisma.staff.update({
+      where: { id: staff.id },
+      data,
+    });
+    return stripSecrets(updated);
   }
 
   // ─── Update ──────────────────────────────────────────────────────────────────
