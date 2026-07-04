@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import { ServicesService } from './services.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 describe('ServicesService — staff assignments', () => {
   let service: ServicesService;
@@ -23,8 +24,10 @@ describe('ServicesService — staff assignments', () => {
     salon: { findUnique: jest.fn() },
     staff: { findMany: jest.fn() },
     service: { findFirst: jest.fn(), findMany: jest.fn() },
+    appointment: { findMany: jest.fn() },
     $transaction: jest.fn((fn: (tx: typeof txMock) => unknown) => fn(txMock)),
   };
+  const notificationsMock = { notify: jest.fn() };
 
   const SALON_ID = 'salon-1';
   const OWNER_ID = 'owner-1';
@@ -41,11 +44,13 @@ describe('ServicesService — staff assignments', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ServicesService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: NotificationsService, useValue: notificationsMock },
       ],
     }).compile();
 
@@ -58,7 +63,13 @@ describe('ServicesService — staff assignments', () => {
     prismaMock.service.findFirst.mockResolvedValue({
       id: SERVICE_ID,
       salonId: SALON_ID,
+      name: 'Tuns',
+      price: 100,
+      durationMin: 45,
+      currency: 'RON',
     });
+    prismaMock.appointment.findMany.mockResolvedValue([]);
+    notificationsMock.notify.mockResolvedValue(null);
     txMock.service.create.mockResolvedValue({ id: SERVICE_ID });
     txMock.service.update.mockResolvedValue({ id: SERVICE_ID });
     txMock.service.findUniqueOrThrow.mockResolvedValue({
@@ -219,6 +230,119 @@ describe('ServicesService — staff assignments', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('update — price/duration change notifications', () => {
+    const CLIENT_A = 'client-a';
+    const CLIENT_B = 'client-b';
+
+    it('notifies each distinct client with PRICE_CHANGE when the price changes', async () => {
+      // Arrange
+      prismaMock.appointment.findMany.mockResolvedValue([
+        { clientId: CLIENT_A },
+        { clientId: CLIENT_B },
+      ]);
+
+      // Act
+      await service.update(SALON_ID, SERVICE_ID, OWNER_ID, {
+        price: 150,
+      } as any);
+
+      // Assert — one PRICE_CHANGE per distinct client, old → new value in body
+      expect(notificationsMock.notify).toHaveBeenCalledTimes(2);
+      for (const clientId of [CLIENT_A, CLIENT_B]) {
+        expect(notificationsMock.notify).toHaveBeenCalledWith(
+          clientId,
+          expect.objectContaining({
+            type: 'PRICE_CHANGE',
+            title: 'Preț modificat',
+            body: expect.stringContaining('de la 100 RON la 150 RON'),
+          }),
+        );
+      }
+    });
+
+    it('notifies with DURATION_CHANGE when the duration changes', async () => {
+      // Arrange
+      prismaMock.appointment.findMany.mockResolvedValue([
+        { clientId: CLIENT_A },
+      ]);
+
+      // Act
+      await service.update(SALON_ID, SERVICE_ID, OWNER_ID, {
+        durationMin: 60,
+      } as any);
+
+      // Assert
+      expect(notificationsMock.notify).toHaveBeenCalledWith(
+        CLIENT_A,
+        expect.objectContaining({
+          type: 'DURATION_CHANGE',
+          title: 'Durată modificată',
+          body: expect.stringContaining('de la 45 min la 60 min'),
+        }),
+      );
+    });
+
+    it('only targets future PENDING/CONFIRMED appointments of registered clients', async () => {
+      // Arrange
+      prismaMock.appointment.findMany.mockResolvedValue([]);
+
+      // Act
+      await service.update(SALON_ID, SERVICE_ID, OWNER_ID, {
+        price: 150,
+      } as any);
+
+      // Assert — guests excluded, distinct clients, future window, live statuses
+      expect(prismaMock.appointment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            serviceId: SERVICE_ID,
+            guestName: null,
+            startAt: { gt: expect.any(Date) },
+            status: { in: ['PENDING', 'CONFIRMED'] },
+          }),
+          distinct: ['clientId'],
+        }),
+      );
+      expect(notificationsMock.notify).not.toHaveBeenCalled();
+    });
+
+    it('does not notify when price is submitted unchanged', async () => {
+      // Act — dto price equals the stored price
+      await service.update(SALON_ID, SERVICE_ID, OWNER_ID, {
+        price: 100,
+        durationMin: 45,
+      } as any);
+
+      // Assert
+      expect(prismaMock.appointment.findMany).not.toHaveBeenCalled();
+      expect(notificationsMock.notify).not.toHaveBeenCalled();
+    });
+
+    it('does not notify when neither price nor duration is in the dto', async () => {
+      // Act
+      await service.update(SALON_ID, SERVICE_ID, OWNER_ID, {
+        name: 'Tuns nou',
+      } as any);
+
+      // Assert
+      expect(prismaMock.appointment.findMany).not.toHaveBeenCalled();
+      expect(notificationsMock.notify).not.toHaveBeenCalled();
+    });
+
+    it('never fails the update when notifications fail', async () => {
+      // Arrange
+      prismaMock.appointment.findMany.mockResolvedValue([
+        { clientId: CLIENT_A },
+      ]);
+      notificationsMock.notify.mockRejectedValue(new Error('db down'));
+
+      // Act + Assert
+      await expect(
+        service.update(SALON_ID, SERVICE_ID, OWNER_ID, { price: 150 } as any),
+      ).resolves.toEqual(expect.objectContaining({ id: SERVICE_ID }));
     });
   });
 });

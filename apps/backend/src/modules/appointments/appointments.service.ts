@@ -851,9 +851,9 @@ export class AppointmentsService {
     // Tell the client about the new time; never blocks the reschedule.
     try {
       await this.notifications.notify(appt.clientId, {
-        type: 'REMINDER',
+        type: 'RESCHEDULED',
         title: 'Programare mutată',
-        body: `${appt.service.name} a fost mutată la ${formatRoDateTime(startAt)}.`,
+        body: `${appt.service.name} a fost mutată de la ${formatRoDateTime(appt.startAt)} la ${formatRoDateTime(startAt)}.`,
         appointmentId: updated.id,
       });
     } catch (err) {
@@ -886,9 +886,14 @@ export class AppointmentsService {
           >
         > = {
           [AppointmentStatus.CONFIRMED]: {
-            type: 'REMINDER',
-            title: 'Programare confirmată',
-            body: `${serviceName} din ${when} a fost confirmată de salon.`,
+            type: 'BOOKING_ACCEPTED',
+            title: 'Programare acceptată',
+            body: `${serviceName} din ${when} a fost acceptată de salon.`,
+          },
+          [AppointmentStatus.REJECTED]: {
+            type: 'BOOKING_REJECTED',
+            title: 'Programare respinsă',
+            body: `${serviceName} din ${when} a fost respinsă de salon.`,
           },
           [AppointmentStatus.CANCELLED]: {
             type: 'CANCELLATION',

@@ -368,14 +368,19 @@ describe('AppointmentsService — reschedule', () => {
     expect(updateArgs.data.staffId).toBe('staff-1');
   });
 
-  it('notifies the client about the new time', async () => {
+  it('notifies the client with RESCHEDULED, including old → new time', async () => {
     // Act
     await service.reschedule(APPT_ID, ADMIN_ID, dto);
 
     // Assert
     expect(notificationsMock.notify).toHaveBeenCalledWith(
       CLIENT_ID,
-      expect.objectContaining({ type: 'REMINDER', appointmentId: APPT_ID }),
+      expect.objectContaining({
+        type: 'RESCHEDULED',
+        title: 'Programare mutată',
+        appointmentId: APPT_ID,
+        body: expect.stringMatching(/mutată de la .+ la .+/),
+      }),
     );
   });
 
@@ -653,5 +658,186 @@ describe('AppointmentsService — client internalNotes guard', () => {
 
     // Assert
     expect(prismaMock.appointment.update).toHaveBeenCalled();
+  });
+});
+
+describe('AppointmentsService — status-change notifications', () => {
+  let service: AppointmentsService;
+
+  const prismaMock = {
+    appointment: { findUnique: jest.fn(), update: jest.fn() },
+  };
+  const slotLockMock = { releaseLock: jest.fn() };
+  const notificationsMock = { notify: jest.fn() };
+
+  const ADMIN_ID = 'admin-1';
+  const CLIENT_ID = 'client-1';
+  const APPT_ID = 'appt-1';
+
+  const FUTURE = new Date(Date.now() + 2 * 3_600_000);
+  const PAST = new Date(Date.now() - 2 * 3_600_000);
+
+  const apptWith = (status: string, startAt: Date) => ({
+    id: APPT_ID,
+    clientId: CLIENT_ID,
+    status,
+    startAt,
+    salon: { adminId: ADMIN_ID },
+  });
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AppointmentsService,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: SlotLockService, useValue: slotLockMock },
+        { provide: NotificationsService, useValue: notificationsMock },
+      ],
+    }).compile();
+
+    service = module.get<AppointmentsService>(AppointmentsService);
+
+    prismaMock.appointment.update.mockResolvedValue({
+      id: APPT_ID,
+      startAt: FUTURE,
+      service: { name: 'Unghii cu gel' },
+    });
+  });
+
+  it('sends BOOKING_ACCEPTED to the client when the salon confirms', async () => {
+    // Arrange
+    prismaMock.appointment.findUnique.mockResolvedValue(
+      apptWith('PENDING', FUTURE),
+    );
+
+    // Act
+    await service.updateStatus(APPT_ID, ADMIN_ID, {
+      status: 'CONFIRMED',
+    } as any);
+
+    // Assert
+    expect(notificationsMock.notify).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.objectContaining({
+        type: 'BOOKING_ACCEPTED',
+        title: 'Programare acceptată',
+        appointmentId: APPT_ID,
+      }),
+    );
+  });
+
+  it('sends BOOKING_REJECTED to the client when the salon rejects', async () => {
+    // Arrange
+    prismaMock.appointment.findUnique.mockResolvedValue(
+      apptWith('PENDING', FUTURE),
+    );
+
+    // Act
+    await service.updateStatus(APPT_ID, ADMIN_ID, {
+      status: 'REJECTED',
+    } as any);
+
+    // Assert
+    expect(notificationsMock.notify).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.objectContaining({
+        type: 'BOOKING_REJECTED',
+        title: 'Programare respinsă',
+        appointmentId: APPT_ID,
+      }),
+    );
+  });
+
+  it('forbids the client from rejecting their own appointment', async () => {
+    // Arrange
+    prismaMock.appointment.findUnique.mockResolvedValue(
+      apptWith('PENDING', FUTURE),
+    );
+
+    // Act + Assert
+    await expect(
+      service.updateStatus(APPT_ID, CLIENT_ID, { status: 'REJECTED' } as any),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects REJECTED from a non-PENDING status (terminal transitions)', async () => {
+    // Arrange
+    prismaMock.appointment.findUnique.mockResolvedValue(
+      apptWith('CONFIRMED', FUTURE),
+    );
+
+    // Act + Assert
+    await expect(
+      service.updateStatus(APPT_ID, ADMIN_ID, { status: 'REJECTED' } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('sends CANCELLATION to the client on salon cancellation', async () => {
+    // Arrange
+    prismaMock.appointment.findUnique.mockResolvedValue(
+      apptWith('CONFIRMED', FUTURE),
+    );
+
+    // Act
+    await service.updateStatus(APPT_ID, ADMIN_ID, {
+      status: 'CANCELLED',
+    } as any);
+
+    // Assert
+    expect(notificationsMock.notify).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.objectContaining({ type: 'CANCELLATION', appointmentId: APPT_ID }),
+    );
+  });
+
+  it('sends CANCELLATION to the salon admin on client cancellation', async () => {
+    // Arrange
+    prismaMock.appointment.findUnique.mockResolvedValue(
+      apptWith('CONFIRMED', FUTURE),
+    );
+
+    // Act
+    await service.updateStatus(APPT_ID, CLIENT_ID, {
+      status: 'CANCELLED',
+    } as any);
+
+    // Assert
+    expect(notificationsMock.notify).toHaveBeenCalledWith(
+      ADMIN_ID,
+      expect.objectContaining({ type: 'CANCELLATION', appointmentId: APPT_ID }),
+    );
+  });
+
+  it('sends NO_SHOW to the client when marked after start', async () => {
+    // Arrange
+    prismaMock.appointment.findUnique.mockResolvedValue(
+      apptWith('CONFIRMED', PAST),
+    );
+
+    // Act
+    await service.updateStatus(APPT_ID, ADMIN_ID, { status: 'NO_SHOW' } as any);
+
+    // Assert
+    expect(notificationsMock.notify).toHaveBeenCalledWith(
+      CLIENT_ID,
+      expect.objectContaining({ type: 'NO_SHOW', appointmentId: APPT_ID }),
+    );
+  });
+
+  it('does not fail the status update when the notification fails', async () => {
+    // Arrange
+    prismaMock.appointment.findUnique.mockResolvedValue(
+      apptWith('PENDING', FUTURE),
+    );
+    notificationsMock.notify.mockRejectedValue(new Error('db down'));
+
+    // Act + Assert
+    await expect(
+      service.updateStatus(APPT_ID, ADMIN_ID, { status: 'CONFIRMED' } as any),
+    ).resolves.toEqual(expect.objectContaining({ id: APPT_ID }));
   });
 });
