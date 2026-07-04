@@ -34,6 +34,7 @@ export interface ValidatedDiscount {
   type: DiscountType;
   value: number;
   maxRedemptions: number | null;
+  maxPerClient: number;
   /** Amount taken off the service price (2-decimal, FIXED capped at price). */
   discountAmount: number;
   finalPrice: number;
@@ -332,6 +333,7 @@ export class DiscountsService {
       type: codeRow.type,
       value: Number(codeRow.value),
       maxRedemptions: codeRow.maxRedemptions,
+      maxPerClient: codeRow.maxPerClient,
       discountAmount,
       finalPrice,
     };
@@ -361,8 +363,14 @@ export class DiscountsService {
 
   /**
    * Writes the redemption row inside the booking transaction, then re-checks
-   * the total cap — two parallel bookings can each pass assertRedeemable, but
-   * whichever pushes the count over maxRedemptions rolls back here.
+   * both usage caps — two parallel bookings can each pass assertRedeemable,
+   * but whichever pushes a count over its cap rolls back here.
+   *
+   * The UPDATE on the code row takes a row-level lock that SERIALIZES
+   * concurrent redemptions of the same code: under READ COMMITTED a plain
+   * re-count would only see this transaction's own uncommitted row, letting
+   * two parallel bookings both slip past the cap. With the lock, the second
+   * transaction waits, then counts the first one's committed row.
    */
   async recordRedemption(
     tx: DiscountDbClient,
@@ -381,6 +389,12 @@ export class DiscountsService {
       },
     });
 
+    // Row-level lock — parallel redemptions of this code queue up here.
+    await tx.discountCode.update({
+      where: { id: opts.validated.codeId },
+      data: { updatedAt: new Date() },
+    });
+
     if (opts.validated.maxRedemptions != null) {
       const total = await tx.discountRedemption.count({
         where: { codeId: opts.validated.codeId },
@@ -390,6 +404,15 @@ export class DiscountsService {
           'Codul de reducere a atins numărul maxim de utilizări.',
         );
       }
+    }
+
+    const clientUses = await tx.discountRedemption.count({
+      where: { codeId: opts.validated.codeId, clientId: opts.clientId },
+    });
+    if (clientUses > opts.validated.maxPerClient) {
+      throw new BadRequestException(
+        'Ai folosit deja acest cod de numărul maxim de ori.',
+      );
     }
   }
 }

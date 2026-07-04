@@ -22,7 +22,6 @@ import {
 } from '@nestjs/swagger';
 import type { User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import {
   CreatePhotoCategoryDto,
@@ -85,14 +84,20 @@ export class StaffGalleryController {
 
   // ─── Categories ──────────────────────────────────────────────────────────────
 
-  @Public()
+  // NOT public: anonymous callers get the gallery through the professional
+  // profile endpoint, which honours publicSettings.showGallery. This listing
+  // backs the editor, so it stays visible to its owner even when hidden.
   @Get('photo-categories')
-  @ApiOperation({ summary: 'List photo categories with their photos (public)' })
+  @Roles('ADMIN_SALON', 'STAFF_MEMBER')
+  @ApiOperation({
+    summary: 'List photo categories with their photos (staff self or owner)',
+  })
   listCategories(
     @Param('salonId') salonId: string,
     @Param('staffId') staffId: string,
+    @CurrentUser() user: User,
   ) {
-    return this.galleryService.listCategories(salonId, staffId);
+    return this.galleryService.listCategories(salonId, staffId, user);
   }
 
   @Post('photo-categories')

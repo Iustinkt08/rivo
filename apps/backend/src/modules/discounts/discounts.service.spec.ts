@@ -428,6 +428,7 @@ describe('DiscountsService', () => {
       type: 'PERCENT' as any,
       value: 20,
       maxRedemptions: 5,
+      maxPerClient: 10,
       discountAmount: 30,
       finalPrice: 120,
     };
@@ -454,6 +455,24 @@ describe('DiscountsService', () => {
       });
     });
 
+    it('row-locks the code before re-counting (serializes parallel redemptions)', async () => {
+      // Arrange
+      prismaMock.discountRedemption.count.mockResolvedValue(3);
+
+      // Act
+      await service.recordRedemption(prismaMock as any, {
+        validated,
+        appointmentId: 'appt-1',
+        clientId: CLIENT_ID,
+      });
+
+      // Assert — the UPDATE takes the row-level lock inside the booking tx.
+      expect(prismaMock.discountCode.update).toHaveBeenCalledWith({
+        where: { id: 'code-1' },
+        data: { updatedAt: expect.any(Date) },
+      });
+    });
+
     it('throws when the insert pushed the count over maxRedemptions (parallel bookings)', async () => {
       // Arrange — after our insert the code counts 6 uses against a cap of 5
       prismaMock.discountRedemption.count.mockResolvedValue(6);
@@ -468,7 +487,21 @@ describe('DiscountsService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('skips the cap re-check for unlimited codes', async () => {
+    it('throws when the insert pushed the count over maxPerClient (parallel bookings)', async () => {
+      // Arrange — total cap fine (2 ≤ 5) but this client now counts 2 > 1
+      prismaMock.discountRedemption.count.mockResolvedValue(2);
+
+      // Act + Assert
+      await expect(
+        service.recordRedemption(prismaMock as any, {
+          validated: { ...validated, maxPerClient: 1 },
+          appointmentId: 'appt-1',
+          clientId: CLIENT_ID,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('skips the total-cap re-check for unlimited codes but still re-checks per-client', async () => {
       // Act
       await service.recordRedemption(prismaMock as any, {
         validated: { ...validated, maxRedemptions: null },
@@ -476,8 +509,11 @@ describe('DiscountsService', () => {
         clientId: CLIENT_ID,
       });
 
-      // Assert
-      expect(prismaMock.discountRedemption.count).not.toHaveBeenCalled();
+      // Assert — only the per-client count runs, scoped to this client.
+      expect(prismaMock.discountRedemption.count).toHaveBeenCalledTimes(1);
+      expect(prismaMock.discountRedemption.count).toHaveBeenCalledWith({
+        where: { codeId: 'code-1', clientId: CLIENT_ID },
+      });
     });
   });
 });

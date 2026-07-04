@@ -60,9 +60,14 @@ describe('StaffService — updateOwnProfile (auth matrix + whitelist)', () => {
 
   it('allows the staff member to edit their own profile', async () => {
     // Act
-    const result = await service.updateOwnProfile(SALON_ID, STAFF_ID, staffUser, {
-      firstName: 'Ana-Maria',
-    });
+    const result = await service.updateOwnProfile(
+      SALON_ID,
+      STAFF_ID,
+      staffUser,
+      {
+        firstName: 'Ana-Maria',
+      },
+    );
 
     // Assert
     expect(prismaMock.staff.update).toHaveBeenCalledWith({
@@ -251,9 +256,7 @@ describe('StaffService — findProfessionalProfile visibility rules', () => {
         id: 'cat-1',
         name: 'Balayage',
         sortOrder: 0,
-        photos: [
-          { id: 'photo-1', url: 'https://cdn/x.jpg', caption: null },
-        ],
+        photos: [{ id: 'photo-1', url: 'https://cdn/x.jpg', caption: null }],
       },
     ]);
   });

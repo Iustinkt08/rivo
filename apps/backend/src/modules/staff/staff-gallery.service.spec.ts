@@ -302,7 +302,7 @@ describe('StaffGalleryService — categories', () => {
     mocks.prismaMock.staffPhotoCategory.findMany.mockResolvedValue([]);
 
     // Act
-    await service.listCategories(SALON_ID, STAFF_ID);
+    await service.listCategories(SALON_ID, STAFF_ID, staffSelfUser);
 
     // Assert
     expect(mocks.prismaMock.staffPhotoCategory.findMany).toHaveBeenCalledWith({
@@ -312,6 +312,13 @@ describe('StaffGalleryService — categories', () => {
         photos: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
       },
     });
+  });
+
+  it('forbids listing categories for a foreign staff member (gallery may be hidden)', async () => {
+    await expect(
+      service.listCategories(SALON_ID, STAFF_ID, otherStaffUser),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(mocks.prismaMock.staffPhotoCategory.findMany).not.toHaveBeenCalled();
   });
 
   it('deletes a category only when it belongs to the staff member', async () => {

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -77,17 +78,37 @@ describe('StaffService — create', () => {
     ]);
   });
 
-  it('links only the provided serviceIds when given', async () => {
+  it('links only the provided serviceIds when they belong to the salon', async () => {
+    // Arrange — the validation lookup resolves the requested id in this salon
+    prismaMock.service.findMany.mockResolvedValue([{ id: 'svc-9' }]);
+
     // Act
     await service.create(SALON_ID, OWNER_ID, {
       ...dto,
       serviceIds: ['svc-9'],
     });
 
-    // Assert
-    expect(prismaMock.service.findMany).not.toHaveBeenCalled();
+    // Assert — the lookup is scoped to the salon (cross-tenant guard)
+    expect(prismaMock.service.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ['svc-9'] }, salonId: SALON_ID },
+      select: { id: true },
+    });
     const data = prismaMock.staff.create.mock.calls[0][0].data;
     expect(data.staffServices.create).toEqual([{ serviceId: 'svc-9' }]);
+  });
+
+  it('rejects serviceIds that belong to another salon', async () => {
+    // Arrange — the foreign id does not resolve within this salon
+    prismaMock.service.findMany.mockResolvedValue([]);
+
+    // Act + Assert
+    await expect(
+      service.create(SALON_ID, OWNER_ID, {
+        ...dto,
+        serviceIds: ['foreign-svc'],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prismaMock.staff.create).not.toHaveBeenCalled();
   });
 });
 
@@ -230,6 +251,7 @@ describe('StaffService — searchProfessionals', () => {
         specialty: 'Hairstylist',
         avatarEmoji: '💇',
         avatarUrl: null,
+        publicSettings: { showApptCount: true },
         salon: { id: 'salon-1', name: 'Salon', slug: 'salon' },
         _count: { appointments: 7 },
       },
@@ -276,6 +298,30 @@ describe('StaffService — searchProfessionals', () => {
 
     // Assert
     expect(results[0]).toMatchObject({ averageRating: 0, reviewCount: 0 });
+  });
+
+  it('hides appointmentCount when publicSettings does not opt in (default)', async () => {
+    // Arrange — no publicSettings ⇒ showApptCount defaults to false
+    prismaMock.staff.findMany.mockResolvedValue([
+      {
+        id: 'staff-2',
+        firstName: 'Ioana',
+        lastName: 'Marin',
+        specialty: 'Nails',
+        avatarEmoji: null,
+        avatarUrl: null,
+        publicSettings: null,
+        salon: { id: 'salon-1', name: 'Salon', slug: 'salon' },
+        _count: { appointments: 42 },
+      },
+    ]);
+    prismaMock.appointment.findMany.mockResolvedValue([]);
+
+    // Act
+    const results = await service.searchProfessionals(undefined, 10);
+
+    // Assert
+    expect(results[0].appointmentCount).toBeNull();
   });
 });
 

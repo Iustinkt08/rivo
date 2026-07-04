@@ -134,6 +134,7 @@ export class StaffService {
         avatarUrl: true,
         bio: true,
         salonId: true,
+        publicSettings: true,
         salon: { select: { id: true, name: true, slug: true } },
         _count: { select: { appointments: true } },
       },
@@ -148,7 +149,11 @@ export class StaffService {
       bio: s.bio,
       salonId: s.salonId,
       salonName: s.salon?.name ?? null,
-      appointmentCount: s._count.appointments,
+      // Ranking may use the count, but the NUMBER is only exposed when the
+      // professional opted in (same publicSettings gate as their profile).
+      appointmentCount: resolvePublicVisibility(s.publicSettings).showApptCount
+        ? s._count.appointments
+        : null,
     }));
   }
 
@@ -303,6 +308,7 @@ export class StaffService {
         specialty: true,
         avatarEmoji: true,
         avatarUrl: true,
+        publicSettings: true,
         salon: { select: { id: true, name: true, slug: true } },
         _count: { select: { appointments: true } },
       },
@@ -338,7 +344,11 @@ export class StaffService {
         avatarEmoji: s.avatarEmoji,
         avatarUrl: s.avatarUrl,
         salon: s.salon,
-        appointmentCount: s._count.appointments,
+        // Same publicSettings gate as the profile — number hidden by default.
+        appointmentCount: resolvePublicVisibility(s.publicSettings)
+          .showApptCount
+          ? s._count.appointments
+          : null,
         averageRating: r ? Number((r.sum / r.count).toFixed(1)) : 0,
         reviewCount: r?.count ?? 0,
       };
@@ -363,6 +373,30 @@ export class StaffService {
     });
     if (!staff) throw new NotFoundException('Staff member not found');
     return staff;
+  }
+
+  /**
+   * Cross-tenant guard for staff↔service links (mirrors
+   * assertStaffBelongToSalon in services.service.ts): every provided service
+   * id must belong to the salon. Returns the deduplicated list.
+   */
+  private async assertServicesBelongToSalon(
+    salonId: string,
+    serviceIds: string[],
+  ): Promise<string[]> {
+    const uniqueIds = [...new Set(serviceIds)];
+    if (uniqueIds.length === 0) return [];
+
+    const found = await this.prisma.service.findMany({
+      where: { id: { in: uniqueIds }, salonId },
+      select: { id: true },
+    });
+    if (found.length !== uniqueIds.length) {
+      throw new BadRequestException(
+        'Some services do not belong to this salon',
+      );
+    }
+    return uniqueIds;
   }
 
   // ─── List ────────────────────────────────────────────────────────────────────
@@ -402,9 +436,12 @@ export class StaffService {
           include: { service: { include: { category: true } } },
         },
         workSchedules: { orderBy: { dayOfWeek: 'asc' } },
+        // Public payload: only the blocked time ranges — `reason` is private
+        // staff data (e.g. medical leave) and must never leave the API here.
         timeOffBlocks: {
           where: { endAt: { gte: new Date() } },
           orderBy: { startAt: 'asc' },
+          select: { id: true, startAt: true, endAt: true },
         },
       },
     });
@@ -428,7 +465,7 @@ export class StaffService {
     // member is immediately bookable (the "any specialist" availability path
     // only considers staff with StaffService links).
     const linkedServiceIds = serviceIds?.length
-      ? serviceIds
+      ? await this.assertServicesBelongToSalon(salonId, serviceIds)
       : (
           await this.prisma.service.findMany({
             where: { salonId, isActive: true },
@@ -692,10 +729,17 @@ export class StaffService {
 
     // If serviceIds provided, replace all service mappings
     if (serviceIds !== undefined) {
+      const validatedServiceIds = await this.assertServicesBelongToSalon(
+        salonId,
+        serviceIds,
+      );
       await this.prisma.staffService.deleteMany({ where: { staffId } });
-      if (serviceIds.length) {
+      if (validatedServiceIds.length) {
         await this.prisma.staffService.createMany({
-          data: serviceIds.map((serviceId) => ({ staffId, serviceId })),
+          data: validatedServiceIds.map((serviceId) => ({
+            staffId,
+            serviceId,
+          })),
         });
       }
     }

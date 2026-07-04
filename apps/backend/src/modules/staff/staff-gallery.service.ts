@@ -166,13 +166,13 @@ export class StaffGalleryService {
     });
   }
 
-  /** Public: categories (with their photos), both ordered by sortOrder. */
-  async listCategories(salonId: string, staffId: string) {
-    const staff = await this.prisma.staff.findFirst({
-      where: { id: staffId, salonId },
-      select: { id: true },
-    });
-    if (!staff) throw new NotFoundException('Staff member not found');
+  /**
+   * Editor listing: categories (with their photos), both ordered by sortOrder.
+   * Restricted to the staff member / salon owner — public consumers get the
+   * gallery via the professional profile, gated by publicSettings.showGallery.
+   */
+  async listCategories(salonId: string, staffId: string, user: User) {
+    await this.assertCanManageGallery(salonId, staffId, user);
 
     return this.prisma.staffPhotoCategory.findMany({
       where: { staffId },

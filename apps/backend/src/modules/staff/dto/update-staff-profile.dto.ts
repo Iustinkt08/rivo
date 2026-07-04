@@ -25,14 +25,18 @@ export class StaffSocialsDto {
   @ValidateIf((o: StaffSocialsDto) => o.instagram !== '')
   @IsString()
   @MaxLength(SOCIAL_MAX_LENGTH)
-  @Matches(SOCIAL_VALUE_PATTERN, { message: `instagram ${SOCIAL_VALUE_MESSAGE}` })
+  @Matches(SOCIAL_VALUE_PATTERN, {
+    message: `instagram ${SOCIAL_VALUE_MESSAGE}`,
+  })
   instagram?: string;
 
   @IsOptional()
   @ValidateIf((o: StaffSocialsDto) => o.facebook !== '')
   @IsString()
   @MaxLength(SOCIAL_MAX_LENGTH)
-  @Matches(SOCIAL_VALUE_PATTERN, { message: `facebook ${SOCIAL_VALUE_MESSAGE}` })
+  @Matches(SOCIAL_VALUE_PATTERN, {
+    message: `facebook ${SOCIAL_VALUE_MESSAGE}`,
+  })
   facebook?: string;
 
   @IsOptional()
