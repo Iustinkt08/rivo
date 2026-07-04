@@ -115,12 +115,28 @@ export class AppointmentsService {
   }
 
   // Cross-tenant guard: the staff member being booked must belong to the salon.
-  private async assertStaffInSalon(staffId: string, salonId: string) {
+  // When a serviceId is provided, the staff member must also be assigned to
+  // that service (StaffService link) — clients must never be able to book a
+  // service with someone who doesn't perform it.
+  private async assertStaffInSalon(
+    staffId: string,
+    salonId: string,
+    serviceId?: string,
+  ) {
     const staff = await this.prisma.staff.findFirst({
       where: { id: staffId, salonId, isActive: true },
     });
     if (!staff)
       throw new NotFoundException('Staff member not found for this salon');
+    if (serviceId) {
+      const link = await this.prisma.staffService.findUnique({
+        where: { staffId_serviceId: { staffId, serviceId } },
+      });
+      if (!link)
+        throw new BadRequestException(
+          'Staff member does not perform this service',
+        );
+    }
     return staff;
   }
 
@@ -318,8 +334,15 @@ export class AppointmentsService {
     staffId?: string,
   ) {
     if (staffId) {
+      // The explicit pick must satisfy the same eligibility rule as the
+      // "any staff" branch — member of the salon AND assigned to the service.
       const staff = await this.prisma.staff.findFirst({
-        where: { id: staffId, salonId, isActive: true },
+        where: {
+          id: staffId,
+          salonId,
+          isActive: true,
+          staffServices: { some: { serviceId } },
+        },
         include: { workSchedules: true },
       });
       return staff ? [staff] : [];
@@ -451,7 +474,7 @@ export class AppointmentsService {
     });
     if (!service) throw new NotFoundException('Service not found');
 
-    await this.assertStaffInSalon(dto.staffId, salonId);
+    await this.assertStaffInSalon(dto.staffId, salonId, dto.serviceId);
 
     const existingAppt = await this.prisma.appointment.findFirst({
       where: {
@@ -504,7 +527,7 @@ export class AppointmentsService {
     });
     if (!service) throw new NotFoundException('Service not found or inactive');
 
-    await this.assertStaffInSalon(dto.staffId, dto.salonId);
+    await this.assertStaffInSalon(dto.staffId, dto.salonId, dto.serviceId);
 
     // Salon-level mini-CRM: a blocked client cannot book at this salon
     const clientProfile = await this.prisma.clientSalonProfile.findUnique({
@@ -889,7 +912,7 @@ export class AppointmentsService {
       );
     }
     if (targetStaffId !== appt.staffId) {
-      await this.assertStaffInSalon(targetStaffId, appt.salonId);
+      await this.assertStaffInSalon(targetStaffId, appt.salonId, appt.serviceId);
     }
 
     const endAt = new Date(

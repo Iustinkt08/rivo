@@ -29,6 +29,8 @@ describe('AppointmentsService — create', () => {
   const prismaMock = {
     service: { findFirst: jest.fn() },
     staff: { findFirst: jest.fn() },
+    // Staff↔service link check (assertStaffInSalon): linked by default.
+    staffService: { findUnique: jest.fn().mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }) },
     appointment: { findFirst: jest.fn(), create: jest.fn() },
     clientSalonProfile: { findUnique: jest.fn(), upsert: jest.fn() },
     // Interactive transaction: run the callback with the mock itself as `tx`.
@@ -137,6 +139,19 @@ describe('AppointmentsService — create', () => {
 
     // Assert
     expect(result).toBe(createdAppointment);
+  });
+
+  it('rejects booking when the staff member does not perform the service', async () => {
+    // Arrange — staff is in the salon, but has no StaffService link.
+    // ...Once: clearAllMocks keeps implementations, a plain mockResolvedValue
+    // would leak the null into every later test in this suite.
+    prismaMock.staffService.findUnique.mockResolvedValueOnce(null);
+
+    // Act + Assert
+    await expect(service.create(CLIENT_ID, dto)).rejects.toMatchObject({
+      message: 'Staff member does not perform this service',
+    });
+    expect(prismaMock.appointment.create).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundException when staff does not belong to the salon', async () => {
@@ -493,6 +508,8 @@ describe('AppointmentsService — reschedule', () => {
       update: jest.fn(),
     },
     staff: { findFirst: jest.fn() },
+    // Staff↔service link check (assertStaffInSalon): linked by default.
+    staffService: { findUnique: jest.fn().mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }) },
     $transaction: jest.fn((cb: any) => cb(prismaMock)),
   };
   const slotLockMock = { releaseLock: jest.fn() };
@@ -626,6 +643,8 @@ describe('AppointmentsService — staff scoping', () => {
   const prismaMock = {
     salon: { findUnique: jest.fn() },
     staff: { findFirst: jest.fn() },
+    // Staff↔service link check (assertStaffInSalon): linked by default.
+    staffService: { findUnique: jest.fn().mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }) },
     appointment: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
