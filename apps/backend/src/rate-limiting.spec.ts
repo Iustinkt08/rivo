@@ -43,17 +43,21 @@ describe('Rate limiting', () => {
     expect(Reflect.getMetadata(TTL_KEY, handler)).toBe(seconds(60));
   });
 
-  it('applies a 5/min limit to auth verify and complete-profile', () => {
+  it('applies a 5/min limit to complete-profile', () => {
     // Arrange
-    const handlers = [
-      AuthController.prototype.verify,
-      AuthController.prototype.completeProfile,
-    ];
+    const handler = AuthController.prototype.completeProfile;
 
     // Assert
-    for (const handler of handlers) {
-      expect(Reflect.getMetadata(LIMIT_KEY, handler)).toBe(5);
-      expect(Reflect.getMetadata(TTL_KEY, handler)).toBe(seconds(60));
-    }
+    expect(Reflect.getMetadata(LIMIT_KEY, handler)).toBe(5);
+    expect(Reflect.getMetadata(TTL_KEY, handler)).toBe(seconds(60));
+  });
+
+  it('applies a relaxed 30/min limit to auth verify (runs on every app start)', () => {
+    // Arrange
+    const handler = AuthController.prototype.verify;
+
+    // Assert
+    expect(Reflect.getMetadata(LIMIT_KEY, handler)).toBe(30);
+    expect(Reflect.getMetadata(TTL_KEY, handler)).toBe(seconds(60));
   });
 });

@@ -38,9 +38,13 @@ import { StaffChangePasswordDto } from './dto/staff-change-password.dto';
 // Do NOT re-apply them here: a second guard run re-fetches the user and
 // overwrites request.user, losing the isNewUser flag from the first run.
 
-// Token verification + profile writes are brute-force targets — keep tight
+// Credential endpoints are brute-force targets — keep tight
 // (global default is 100/min).
 const AUTH_LIMIT = { default: { limit: 5, ttl: seconds(60) } };
+// /auth/verify is NOT a credential check: it only accepts already-valid JWTs
+// and runs on EVERY app cold start + login. 5/min per IP throttled real users
+// (each app reload + login attempt burns the budget; NAT'd users share it).
+const VERIFY_LIMIT = { default: { limit: 30, ttl: seconds(60) } };
 
 @ApiTags('Auth')
 @ApiBearerAuth()
@@ -88,7 +92,7 @@ export class AuthController {
    * so the mobile app can redirect to the profile completion screen.
    */
   @Post('verify')
-  @Throttle(AUTH_LIMIT)
+  @Throttle(VERIFY_LIMIT)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify Firebase token & upsert user' })
   @ApiOkResponse({ type: AuthResponseDto })
