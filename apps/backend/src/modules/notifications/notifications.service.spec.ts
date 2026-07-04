@@ -14,9 +14,35 @@ describe('NotificationsService', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    notificationPreference: {
+      findUnique: jest.fn(),
+      upsert: jest.fn(),
+    },
   };
 
   const USER_ID = 'user-1';
+
+  const ALL_TRUE_PREFERENCES = {
+    onAccepted: true,
+    onRejected: true,
+    onCancelled: true,
+    onRescheduled: true,
+    onPriceChange: true,
+    onDurationChange: true,
+    onReview: true,
+    onReminder: true,
+  };
+
+  const ALL_FALSE_PREFERENCES = {
+    onAccepted: false,
+    onRejected: false,
+    onCancelled: false,
+    onRescheduled: false,
+    onPriceChange: false,
+    onDurationChange: false,
+    onReview: false,
+    onReminder: false,
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -51,6 +77,117 @@ describe('NotificationsService', () => {
         body: 'Ana Pop — Unghii cu gel',
         data: { type: 'NEW_BOOKING', appointmentId: 'appt-1' },
       },
+    });
+  });
+
+  it('notify skips persisting when the preference for that type is off', async () => {
+    // Arrange
+    prismaMock.notificationPreference.findUnique.mockResolvedValue({
+      ...ALL_TRUE_PREFERENCES,
+      onAccepted: false,
+    });
+
+    // Act
+    const result = await service.notify(USER_ID, {
+      type: 'BOOKING_ACCEPTED',
+      title: 'Programare acceptată',
+      body: 'Salonul a acceptat programarea',
+    });
+
+    // Assert
+    expect(result).toBeNull();
+    expect(prismaMock.notification.create).not.toHaveBeenCalled();
+  });
+
+  it('notify persists when the user has no preference row (defaults all true)', async () => {
+    // Arrange
+    prismaMock.notificationPreference.findUnique.mockResolvedValue(null);
+    prismaMock.notification.create.mockResolvedValue({ id: 'n-2' });
+
+    // Act
+    await service.notify(USER_ID, {
+      type: 'RESCHEDULED',
+      title: 'Programare reprogramată',
+      body: 'Ora s-a schimbat',
+    });
+
+    // Assert
+    expect(prismaMock.notification.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('notify always persists NEW_BOOKING without checking preferences', async () => {
+    // Arrange
+    prismaMock.notificationPreference.findUnique.mockResolvedValue(
+      ALL_FALSE_PREFERENCES,
+    );
+    prismaMock.notification.create.mockResolvedValue({ id: 'n-3' });
+
+    // Act
+    await service.notify(USER_ID, {
+      type: 'NEW_BOOKING',
+      title: 'Programare nouă',
+      body: 'Ana Pop — Unghii cu gel',
+    });
+
+    // Assert
+    expect(prismaMock.notificationPreference.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.notification.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('notify still persists when the preference lookup fails (fail open)', async () => {
+    // Arrange
+    prismaMock.notificationPreference.findUnique.mockRejectedValue(
+      new Error('db down'),
+    );
+    prismaMock.notification.create.mockResolvedValue({ id: 'n-4' });
+
+    // Act
+    await service.notify(USER_ID, {
+      type: 'REMINDER',
+      title: 'Reamintire',
+      body: 'Programare mâine la 10:00',
+    });
+
+    // Assert
+    expect(prismaMock.notification.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('getPreferences returns defaults without creating a row when none exists', async () => {
+    // Arrange
+    prismaMock.notificationPreference.findUnique.mockResolvedValue(null);
+
+    // Act
+    const preferences = await service.getPreferences(USER_ID);
+
+    // Assert
+    expect(preferences).toEqual(ALL_TRUE_PREFERENCES);
+    expect(prismaMock.notificationPreference.upsert).not.toHaveBeenCalled();
+  });
+
+  it('updatePreferences upserts the caller row and returns the updated shape', async () => {
+    // Arrange
+    prismaMock.notificationPreference.upsert.mockResolvedValue({
+      id: 'pref-1',
+      userId: USER_ID,
+      ...ALL_TRUE_PREFERENCES,
+      onReminder: false,
+      updatedAt: new Date(),
+    });
+
+    // Act
+    const preferences = await service.updatePreferences(USER_ID, {
+      onReminder: false,
+    });
+
+    // Assert
+    expect(prismaMock.notificationPreference.upsert).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      create: { userId: USER_ID, onReminder: false },
+      update: { onReminder: false },
+    });
+    expect(preferences).toEqual({
+      ...ALL_TRUE_PREFERENCES,
+      onReminder: false,
     });
   });
 

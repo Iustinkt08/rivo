@@ -1,6 +1,7 @@
-import { Controller, Get, Param, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('Notifications')
@@ -13,6 +14,21 @@ export class NotificationsController {
   @ApiOperation({ summary: "List current user's notifications (newest first)" })
   listMine(@CurrentUser('id') userId: string) {
     return this.notifications.listFor(userId);
+  }
+
+  @Get('preferences')
+  @ApiOperation({ summary: "Get current user's notification preferences" })
+  getPreferences(@CurrentUser('id') userId: string) {
+    return this.notifications.getPreferences(userId);
+  }
+
+  @Patch('preferences')
+  @ApiOperation({ summary: "Update current user's notification preferences" })
+  updatePreferences(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateNotificationPreferencesDto,
+  ) {
+    return this.notifications.updatePreferences(userId, dto);
   }
 
   @Patch('read-all')
