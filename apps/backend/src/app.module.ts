@@ -15,6 +15,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
 import { AddressesModule } from './modules/addresses/addresses.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { DiscountsModule } from './modules/discounts/discounts.module';
+import { LoyaltyModule } from './modules/loyalty/loyalty.module';
 
 // Default API-wide rate limit; sensitive endpoints override it with @Throttle().
 // NOTE: behind a reverse proxy set `app.set('trust proxy', ...)` so the limit
@@ -36,6 +37,7 @@ const GLOBAL_RATE_LIMIT = { ttl: seconds(60), limit: 100 };
     AddressesModule,
     NotificationsModule,
     DiscountsModule,
+    LoyaltyModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

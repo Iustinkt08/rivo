@@ -13,6 +13,10 @@ import {
   NotificationType,
 } from '../notifications/notifications.service';
 import { DiscountsService } from '../discounts/discounts.service';
+import {
+  EligiblePunchReward,
+  LoyaltyService,
+} from '../loyalty/loyalty.service';
 import { AvailabilityQueryDto } from './dto/availability-query.dto';
 import { LockSlotDto } from './dto/lock-slot.dto';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
@@ -80,6 +84,7 @@ export class AppointmentsService {
     private readonly slotLock: SlotLockService,
     private readonly notifications: NotificationsService,
     private readonly discounts: DiscountsService,
+    private readonly loyalty: LoyaltyService,
   ) {}
 
   // ─── Access helpers ──────────────────────────────────────────────────────────
@@ -545,6 +550,32 @@ export class AppointmentsService {
           })
         : null;
 
+      // Loyalty auto-redeem — only registered ONLINE bookings (guest walk-in /
+      // phone bookings never punch), and never stacked on a discount code (the
+      // code wins). Only the eligibility READ is guarded: a lookup failure
+      // must not break the booking, it just means "not eligible". The WRITE
+      // below stays unguarded — its errors must roll the whole tx back.
+      const isRegisteredOnlineBooking =
+        (dto.source ?? BookingSource.ONLINE) === BookingSource.ONLINE &&
+        !dto.guestName &&
+        !dto.guestPhone;
+      let punchReward: EligiblePunchReward | null = null;
+      if (!validatedDiscount && isRegisteredOnlineBooking) {
+        try {
+          punchReward = await this.loyalty.resolveEligibleReward(tx, {
+            salonId: dto.salonId,
+            clientId,
+            price: Number(service.price),
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Punch-card eligibility lookup failed (salon=${dto.salonId}, client=${clientId}): ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        }
+      }
+
       const created = await tx.appointment.create({
         data: {
           clientId,
@@ -559,7 +590,8 @@ export class AppointmentsService {
           clientNotes: dto.clientNotes,
           priceSnapshot: service.price,
           currency: service.currency,
-          discountAmount: validatedDiscount?.discountAmount,
+          discountAmount:
+            validatedDiscount?.discountAmount ?? punchReward?.amountApplied,
           status: AppointmentStatus.PENDING,
         },
         include: {
@@ -590,6 +622,17 @@ export class AppointmentsService {
           validated: validatedDiscount,
           appointmentId: created.id,
           clientId,
+        });
+      }
+
+      // Punch redemption row — the audit trail AND the progress reset (visit
+      // counting restarts after its redeemedAt). Unguarded on purpose: a
+      // failed write rolls back the booking instead of gifting an untracked
+      // discount.
+      if (punchReward) {
+        await this.loyalty.recordRedemption(tx, {
+          reward: punchReward,
+          appointmentId: created.id,
         });
       }
 

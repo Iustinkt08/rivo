@@ -11,10 +11,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SlotLockService } from './slot-lock.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DiscountsService } from '../discounts/discounts.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 
 // Shared across every block — jest.clearAllMocks() in each beforeEach resets it.
 const discountsMock = {
   assertRedeemable: jest.fn(),
+  recordRedemption: jest.fn(),
+};
+const loyaltyMock = {
+  resolveEligibleReward: jest.fn(),
   recordRedemption: jest.fn(),
 };
 
@@ -74,6 +79,7 @@ describe('AppointmentsService — create', () => {
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
         { provide: DiscountsService, useValue: discountsMock },
+        { provide: LoyaltyService, useValue: loyaltyMock },
       ],
     }).compile();
 
@@ -86,6 +92,8 @@ describe('AppointmentsService — create', () => {
     prismaMock.appointment.findFirst.mockResolvedValue(null);
     prismaMock.appointment.create.mockResolvedValue(createdAppointment);
     prismaMock.clientSalonProfile.upsert.mockResolvedValue({});
+    // Default: no punch-card reward earned; loyalty tests override this.
+    loyaltyMock.resolveEligibleReward.mockResolvedValue(null);
   });
 
   it('throws ForbiddenException when client is blocked by salon', async () => {
@@ -268,6 +276,101 @@ describe('AppointmentsService — create', () => {
       service.create(CLIENT_ID, { ...dto, discountCode: 'VARA-2026' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  // ─── Loyalty punch-card auto-redeem ──────────────────────────────────────────
+
+  const punchReward = {
+    salonId: dto.salonId,
+    clientId: CLIENT_ID,
+    amountApplied: 20,
+  };
+
+  it('auto-redeems an earned punch reward: discountAmount set + redemption in tx', async () => {
+    // Arrange — client reached the visit threshold at this salon
+    loyaltyMock.resolveEligibleReward.mockResolvedValue(punchReward);
+
+    // Act
+    await service.create(CLIENT_ID, dto);
+
+    // Assert — eligibility resolved with the tx client from priceSnapshot
+    expect(loyaltyMock.resolveEligibleReward).toHaveBeenCalledWith(prismaMock, {
+      salonId: dto.salonId,
+      clientId: CLIENT_ID,
+      price: 100,
+    });
+    const data = prismaMock.appointment.create.mock.calls[0][0].data;
+    expect(data.discountAmount).toBe(20);
+    expect(loyaltyMock.recordRedemption).toHaveBeenCalledWith(prismaMock, {
+      reward: punchReward,
+      appointmentId: 'appt-1',
+    });
+  });
+
+  it('never stacks the punch reward on a discount code (the code wins)', async () => {
+    // Arrange — a valid code AND an earned punch reward
+    discountsMock.assertRedeemable.mockResolvedValue({
+      codeId: 'code-1',
+      maxRedemptions: null,
+      discountAmount: 30,
+    });
+    discountsMock.recordRedemption.mockResolvedValue(undefined);
+    loyaltyMock.resolveEligibleReward.mockResolvedValue(punchReward);
+
+    // Act
+    await service.create(CLIENT_ID, { ...dto, discountCode: 'VARA-2026' });
+
+    // Assert — loyalty never consulted, code amount applied
+    expect(loyaltyMock.resolveEligibleReward).not.toHaveBeenCalled();
+    expect(loyaltyMock.recordRedemption).not.toHaveBeenCalled();
+    const data = prismaMock.appointment.create.mock.calls[0][0].data;
+    expect(data.discountAmount).toBe(30);
+  });
+
+  it('does not redeem below the threshold (resolver returns null)', async () => {
+    // Act — default mock resolves null
+    await service.create(CLIENT_ID, dto);
+
+    // Assert
+    expect(loyaltyMock.resolveEligibleReward).toHaveBeenCalled();
+    expect(loyaltyMock.recordRedemption).not.toHaveBeenCalled();
+    const data = prismaMock.appointment.create.mock.calls[0][0].data;
+    expect(data.discountAmount).toBeUndefined();
+  });
+
+  it('never redeems for guest walk-in bookings', async () => {
+    // Act — salon books a walk-in guest (no registered client)
+    await service.create(CLIENT_ID, {
+      ...dto,
+      source: 'WALK_IN',
+      guestName: 'Maria',
+      guestPhone: '+40711111111',
+    });
+
+    // Assert — loyalty path skipped entirely
+    expect(loyaltyMock.resolveEligibleReward).not.toHaveBeenCalled();
+    expect(loyaltyMock.recordRedemption).not.toHaveBeenCalled();
+  });
+
+  it('does not break the booking when the eligibility READ fails', async () => {
+    // Arrange — loyalty lookup blows up inside the tx
+    loyaltyMock.resolveEligibleReward.mockRejectedValue(new Error('db down'));
+
+    // Act
+    const result = await service.create(CLIENT_ID, dto);
+
+    // Assert — booked without a reward
+    expect(result).toBe(createdAppointment);
+    expect(loyaltyMock.recordRedemption).not.toHaveBeenCalled();
+  });
+
+  it('rolls the booking back when the punch redemption WRITE fails', async () => {
+    // Arrange — eligible, but the audit-trail insert fails (e.g. unique clash)
+    loyaltyMock.resolveEligibleReward.mockResolvedValue(punchReward);
+    loyaltyMock.recordRedemption.mockRejectedValue(new Error('unique clash'));
+
+    // Act + Assert — the error escapes the $transaction → full rollback
+    await expect(service.create(CLIENT_ID, dto)).rejects.toThrow('unique clash');
+  });
 });
 
 describe('AppointmentsService — updateStatus time gating', () => {
@@ -304,6 +407,7 @@ describe('AppointmentsService — updateStatus time gating', () => {
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
         { provide: DiscountsService, useValue: discountsMock },
+        { provide: LoyaltyService, useValue: loyaltyMock },
       ],
     }).compile();
 
@@ -422,6 +526,7 @@ describe('AppointmentsService — reschedule', () => {
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
         { provide: DiscountsService, useValue: discountsMock },
+        { provide: LoyaltyService, useValue: loyaltyMock },
       ],
     }).compile();
 
@@ -546,6 +651,7 @@ describe('AppointmentsService — staff scoping', () => {
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
         { provide: DiscountsService, useValue: discountsMock },
+        { provide: LoyaltyService, useValue: loyaltyMock },
       ],
     }).compile();
 
@@ -711,6 +817,7 @@ describe('AppointmentsService — client internalNotes guard', () => {
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
         { provide: DiscountsService, useValue: discountsMock },
+        { provide: LoyaltyService, useValue: loyaltyMock },
       ],
     }).compile();
 
@@ -784,6 +891,7 @@ describe('AppointmentsService — status-change notifications', () => {
         { provide: SlotLockService, useValue: slotLockMock },
         { provide: NotificationsService, useValue: notificationsMock },
         { provide: DiscountsService, useValue: discountsMock },
+        { provide: LoyaltyService, useValue: loyaltyMock },
       ],
     }).compile();
 
