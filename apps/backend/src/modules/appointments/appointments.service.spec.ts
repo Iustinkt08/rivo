@@ -369,7 +369,9 @@ describe('AppointmentsService — create', () => {
     loyaltyMock.recordRedemption.mockRejectedValue(new Error('unique clash'));
 
     // Act + Assert — the error escapes the $transaction → full rollback
-    await expect(service.create(CLIENT_ID, dto)).rejects.toThrow('unique clash');
+    await expect(service.create(CLIENT_ID, dto)).rejects.toThrow(
+      'unique clash',
+    );
   });
 });
 

@@ -79,7 +79,10 @@ describe('DiscountsService', () => {
     it('forbids a non-owner from creating codes', async () => {
       // Act + Assert
       await expect(
-        service.create(SALON_ID, 'intruder', { type: 'PERCENT', value: 10 } as any),
+        service.create(SALON_ID, 'intruder', {
+          type: 'PERCENT',
+          value: 10,
+        } as any),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(prismaMock.discountCode.create).not.toHaveBeenCalled();
     });

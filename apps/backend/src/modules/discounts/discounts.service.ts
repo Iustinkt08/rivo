@@ -98,7 +98,11 @@ export class DiscountsService {
     validFrom: Date | null,
     validUntil: Date | null,
   ) {
-    if (validFrom && validUntil && validUntil.getTime() <= validFrom.getTime()) {
+    if (
+      validFrom &&
+      validUntil &&
+      validUntil.getTime() <= validFrom.getTime()
+    ) {
       throw new BadRequestException(
         'Data de sfârșit trebuie să fie după data de început.',
       );
@@ -121,7 +125,10 @@ export class DiscountsService {
 
   /** UI shape: Decimal → number, `_count.redemptions` → `redemptionCount`. */
   private toResponse<
-    T extends { value: Prisma.Decimal | number; _count?: { redemptions: number } },
+    T extends {
+      value: Prisma.Decimal | number;
+      _count?: { redemptions: number };
+    },
   >(row: T) {
     const { _count, ...rest } = row;
     return {
@@ -292,9 +299,7 @@ export class DiscountsService {
 
     const now = Date.now();
     if (codeRow.validFrom && now < codeRow.validFrom.getTime()) {
-      throw new BadRequestException(
-        'Codul de reducere nu este încă valabil.',
-      );
+      throw new BadRequestException('Codul de reducere nu este încă valabil.');
     }
     if (codeRow.validUntil && now > codeRow.validUntil.getTime()) {
       throw new BadRequestException('Codul de reducere a expirat.');
