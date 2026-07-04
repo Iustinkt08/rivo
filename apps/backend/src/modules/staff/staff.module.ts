@@ -8,7 +8,11 @@ import { StorageModule } from '../storage/storage.module';
 
 @Module({
   imports: [StorageModule],
-  controllers: [StaffController, ProfessionalsController, StaffGalleryController],
+  controllers: [
+    StaffController,
+    ProfessionalsController,
+    StaffGalleryController,
+  ],
   providers: [StaffService, StaffGalleryService],
   exports: [StaffService],
 })

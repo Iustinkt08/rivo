@@ -4,13 +4,17 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { StaffGalleryService, UploadedPhotoFile } from './staff-gallery.service';
+import {
+  StaffGalleryService,
+  UploadedPhotoFile,
+} from './staff-gallery.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 
 const SALON_ID = 'salon-1';
 const STAFF_ID = 'staff-1';
-const PHOTO_URL = 'https://x.supabase.co/storage/v1/object/public/staff-gallery/staff-1/a.jpg';
+const PHOTO_URL =
+  'https://x.supabase.co/storage/v1/object/public/staff-gallery/staff-1/a.jpg';
 
 const STAFF_ROW = { id: STAFF_ID, salonId: SALON_ID, userId: 'user-9' };
 const SALON_ROW = { id: SALON_ID, adminId: 'owner-1' };

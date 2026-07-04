@@ -38,9 +38,7 @@ export class StorageService {
         'SUPABASE_URL is not set — cannot reach Supabase Storage',
       );
     }
-    const serviceRoleKey = this.config.get<string>(
-      'SUPABASE_SERVICE_ROLE_KEY',
-    );
+    const serviceRoleKey = this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY');
     if (!serviceRoleKey) {
       throw new InternalServerErrorException(
         'SUPABASE_SERVICE_ROLE_KEY is not set — photo storage is unavailable until it is configured',

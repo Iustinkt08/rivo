@@ -1,4 +1,13 @@
-import { IsString, IsInt, IsNumber, IsOptional, IsBoolean, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateServiceDto {
@@ -29,4 +38,14 @@ export class CreateServiceDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /**
+   * Staff members who perform this service. When provided, the StaffService
+   * join rows are replaced to match exactly this list (validated to belong to
+   * the same salon). Omit to leave assignments untouched.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  staffIds?: string[];
 }

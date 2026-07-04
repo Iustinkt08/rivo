@@ -14,7 +14,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -50,7 +55,9 @@ export class StaffGalleryController {
   @Roles('ADMIN_SALON', 'STAFF_MEMBER')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload a gallery photo (staff self or salon owner)' })
+  @ApiOperation({
+    summary: 'Upload a gallery photo (staff self or salon owner)',
+  })
   uploadPhoto(
     @Param('salonId') salonId: string,
     @Param('staffId') staffId: string,
@@ -64,7 +71,9 @@ export class StaffGalleryController {
   @Delete('photos/:photoId')
   @Roles('ADMIN_SALON', 'STAFF_MEMBER')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a gallery photo (staff self or salon owner)' })
+  @ApiOperation({
+    summary: 'Delete a gallery photo (staff self or salon owner)',
+  })
   deletePhoto(
     @Param('salonId') salonId: string,
     @Param('staffId') staffId: string,
@@ -88,7 +97,9 @@ export class StaffGalleryController {
 
   @Post('photo-categories')
   @Roles('ADMIN_SALON', 'STAFF_MEMBER')
-  @ApiOperation({ summary: 'Create a photo category (staff self or salon owner)' })
+  @ApiOperation({
+    summary: 'Create a photo category (staff self or salon owner)',
+  })
   createCategory(
     @Param('salonId') salonId: string,
     @Param('staffId') staffId: string,
