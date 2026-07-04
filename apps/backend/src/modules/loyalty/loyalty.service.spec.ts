@@ -50,9 +50,15 @@ describe('LoyaltyService', () => {
   const prismaMock = {
     salon: { findUnique: jest.fn() },
     staff: { findFirst: jest.fn() },
-    punchCardConfig: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
+    punchCardConfig: {
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      upsert: jest.fn(),
+    },
     punchRedemption: { findFirst: jest.fn(), create: jest.fn() },
     appointment: { count: jest.fn() },
+    // Row lock acquired by resolveEligibleReward (SELECT ... FOR UPDATE).
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
 
   beforeEach(async () => {
@@ -88,7 +94,10 @@ describe('LoyaltyService', () => {
       // Assert
       expect(prismaMock.punchCardConfig.upsert).toHaveBeenCalledWith({
         where: { salonId: SALON_ID },
-        create: expect.objectContaining({ salonId: SALON_ID, requiredVisits: 5 }),
+        create: expect.objectContaining({
+          salonId: SALON_ID,
+          requiredVisits: 5,
+        }),
         update: expect.objectContaining({ requiredVisits: 5, rewardValue: 20 }),
       });
       expect(result.rewardValue).toBe(20);
@@ -228,7 +237,11 @@ describe('LoyaltyService', () => {
       prismaMock.appointment.count.mockResolvedValue(3);
 
       // Act
-      const result = await service.getClientProgress(SALON_ID, CLIENT_ID, OWNER_ID);
+      const result = await service.getClientProgress(
+        SALON_ID,
+        CLIENT_ID,
+        OWNER_ID,
+      );
 
       // Assert — no updatedAt filter without a redemption
       expect(prismaMock.appointment.count).toHaveBeenCalledWith({
@@ -251,7 +264,11 @@ describe('LoyaltyService', () => {
       prismaMock.appointment.count.mockResolvedValue(1);
 
       // Act
-      const result = await service.getClientProgress(SALON_ID, CLIENT_ID, OWNER_ID);
+      const result = await service.getClientProgress(
+        SALON_ID,
+        CLIENT_ID,
+        OWNER_ID,
+      );
 
       // Assert
       expect(prismaMock.punchRedemption.findFirst).toHaveBeenCalledWith({
@@ -276,7 +293,11 @@ describe('LoyaltyService', () => {
       prismaMock.appointment.count.mockResolvedValue(5);
 
       // Act
-      const result = await service.getClientProgress(SALON_ID, CLIENT_ID, OWNER_ID);
+      const result = await service.getClientProgress(
+        SALON_ID,
+        CLIENT_ID,
+        OWNER_ID,
+      );
 
       // Assert
       expect(result.earned).toBe(true);
@@ -290,7 +311,11 @@ describe('LoyaltyService', () => {
       });
 
       // Act
-      const result = await service.getClientProgress(SALON_ID, CLIENT_ID, OWNER_ID);
+      const result = await service.getClientProgress(
+        SALON_ID,
+        CLIENT_ID,
+        OWNER_ID,
+      );
 
       // Assert
       expect(result).toEqual({
@@ -361,7 +386,10 @@ describe('LoyaltyService', () => {
       prismaMock.appointment.count.mockResolvedValue(5);
 
       // Act
-      const reward = await service.resolveEligibleReward(prismaMock as any, opts);
+      const reward = await service.resolveEligibleReward(
+        prismaMock as any,
+        opts,
+      );
 
       // Assert
       expect(reward).toEqual({
@@ -381,7 +409,10 @@ describe('LoyaltyService', () => {
       prismaMock.appointment.count.mockResolvedValue(5);
 
       // Act
-      const reward = await service.resolveEligibleReward(prismaMock as any, opts);
+      const reward = await service.resolveEligibleReward(
+        prismaMock as any,
+        opts,
+      );
 
       // Assert
       expect(reward?.amountApplied).toBe(150);

@@ -15,7 +15,7 @@ const PERCENT_MAX = 100;
 // appointment-create transaction (tx) — accept the common delegate subset.
 export type LoyaltyDbClient = Pick<
   Prisma.TransactionClient,
-  'punchCardConfig' | 'punchRedemption' | 'appointment'
+  'punchCardConfig' | 'punchRedemption' | 'appointment' | '$queryRaw'
 >;
 
 /** An earned reward resolved at booking time, with the server-computed amount. */
@@ -256,6 +256,12 @@ export class LoyaltyService {
       where: { salonId: opts.salonId },
     });
     if (!config || !config.isActive) return null;
+
+    // Serialize concurrent bookings on the config row: without this lock two
+    // parallel transactions could both count the pre-redemption visits and
+    // double-award the reward. The second tx blocks here until the first
+    // commits its PunchRedemption, then re-counts and resolves not-eligible.
+    await db.$queryRaw`SELECT id FROM punch_card_configs WHERE id = ${config.id} FOR UPDATE`;
 
     const completedVisits = await this.countCompletedVisits(
       db,
