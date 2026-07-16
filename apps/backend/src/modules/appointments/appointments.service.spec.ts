@@ -30,7 +30,11 @@ describe('AppointmentsService — create', () => {
     service: { findFirst: jest.fn() },
     staff: { findFirst: jest.fn() },
     // Staff↔service link check (assertStaffInSalon): linked by default.
-    staffService: { findUnique: jest.fn().mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }) },
+    staffService: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }),
+    },
     appointment: { findFirst: jest.fn(), create: jest.fn() },
     clientSalonProfile: { findUnique: jest.fn(), upsert: jest.fn() },
     // Interactive transaction: run the callback with the mock itself as `tx`.
@@ -509,7 +513,11 @@ describe('AppointmentsService — reschedule', () => {
     },
     staff: { findFirst: jest.fn() },
     // Staff↔service link check (assertStaffInSalon): linked by default.
-    staffService: { findUnique: jest.fn().mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }) },
+    staffService: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }),
+    },
     $transaction: jest.fn((cb: any) => cb(prismaMock)),
   };
   const slotLockMock = { releaseLock: jest.fn() };
@@ -644,7 +652,11 @@ describe('AppointmentsService — staff scoping', () => {
     salon: { findUnique: jest.fn() },
     staff: { findFirst: jest.fn() },
     // Staff↔service link check (assertStaffInSalon): linked by default.
-    staffService: { findUnique: jest.fn().mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }) },
+    staffService: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValue({ staffId: 'staff-1', serviceId: 'svc-1' }),
+    },
     appointment: {
       findMany: jest.fn(),
       findUnique: jest.fn(),

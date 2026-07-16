@@ -912,7 +912,11 @@ export class AppointmentsService {
       );
     }
     if (targetStaffId !== appt.staffId) {
-      await this.assertStaffInSalon(targetStaffId, appt.salonId, appt.serviceId);
+      await this.assertStaffInSalon(
+        targetStaffId,
+        appt.salonId,
+        appt.serviceId,
+      );
     }
 
     const endAt = new Date(
