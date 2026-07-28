@@ -18,7 +18,9 @@ Un singur `git clone` aduce tot, iar comenzile `git` din root acoperă și backe
 git add . && git commit -m "..." && git push
 ```
 
-> **Istoric:** până în iulie 2026, `apps/mobile` a fost un repo git separat, nested (`github.com/Iustinkt08/mobile`), înregistrat în `rivo` ca pointer de submodul fără `.gitmodules` — ceea ce însemna că cine clona `rivo` primea un folder `apps/mobile` **gol**. A fost consolidat în monorepo. Repo-ul vechi `mobile` nu mai e folosit; istoricul lui rămâne pe GitHub, dar sursa de adevăr e `rivo`.
+> **Istoric:** până în iulie 2026, `apps/mobile` a fost un repo git separat, nested (`github.com/Iustinkt08/mobile`), înregistrat în `rivo` ca pointer de submodul fără `.gitmodules` — ceea ce însemna că cine clona `rivo` primea un folder `apps/mobile` **gol**. A fost consolidat în monorepo.
+
+> ⚠️ **Repo-ul vechi `github.com/Iustinkt08/mobile` este DEPRECAT și trebuie ȘTERS.** Nu mai comite nimic în el — singura sursă de adevăr e `rivo`. Cât timp există, riscă să inducă în eroare pe cineva care lucrează la proiect. Pași de ștergere și avertismentul despre pierderea istoricului: [§5](#5-ștergerea-repo-ului-vechi-mobile).
 
 ---
 
@@ -122,6 +124,40 @@ rivo/
 
 - [ ] Invită-l pe GitHub la repo-ul `Iustinkt08/rivo` (Settings → Collaborators)
 - [ ] Secretele vin odată cu `git clone` (`.env` sunt în repo) — vezi §3 pentru implicații
+- [ ] **Șterge repo-ul vechi `Iustinkt08/mobile`** ca să nu mai existe confuzie — vezi §5
+
+---
+
+## 5. Ștergerea repo-ului vechi `mobile`
+
+`github.com/Iustinkt08/mobile` nu mai are niciun rol după consolidare. Trebuie șters, altfel cineva o să comită din greșeală în el.
+
+### ⚠️ Înainte să ștergi: istoricul se pierde definitiv
+
+`rivo` conține **fișierele** aplicației mobile, dar nu și **istoricul ei de commit-uri** — consolidarea le-a adus ca un singur commit. Ștergerea repo-ului `mobile` distruge permanent istoricul aplicației (~toate commit-urile de dezvoltare ale app-ului).
+
+Există o copie locală a acelui istoric la `~/rivo-mobile-git-backup-dir`, dar e o singură copie, pe un singur calculator.
+
+**Recomandat înainte de ștergere** — arhivează istoricul într-un branch din `rivo`, ca să nu depindă de acel folder:
+
+```bash
+git remote add mobile-old https://github.com/Iustinkt08/mobile.git
+git fetch mobile-old
+git push origin refs/remotes/mobile-old/main:refs/heads/archive/mobile-history
+git remote remove mobile-old
+```
+
+Branch-ul `archive/mobile-history` rămâne în `rivo` ca referință; nu îl folosești niciodată la dezvoltare.
+
+### Pașii de ștergere
+
+Doar din contul proprietar **`Iustinkt08`** (contul `ZUPhq` are `push`, dar nu `admin`, iar ștergerea cere și scope-ul `delete_repo`):
+
+1. GitHub → `github.com/Iustinkt08/mobile` → **Settings**
+2. Jos de tot → **Danger Zone** → **Delete this repository**
+3. Confirmi tastând `Iustinkt08/mobile`
+
+**Alternativă mai blândă:** în loc de ștergere, **Settings → Danger Zone → Archive this repository**. Repo-ul devine read-only (nimeni nu mai poate comite în el), dar istoricul rămâne. Elimină confuzia fără pierdere de date — varianta recomandată dacă nu ești sigur.
 - [ ] Verifică că poate rula backend + app (vezi README)
 - [ ] Stabiliți convenția de branch-uri + PR
 - [ ] Activați branch protection pe `main`
