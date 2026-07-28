@@ -260,19 +260,20 @@ Prin decizie explicită a proprietarului proiectului, fișierele `.env` **sunt c
 - Odată commit-uite, rămân **permanent în istoricul git** — ștergerea lor într-un commit ulterior **nu** le scoate din istoric.
 - Dacă repo-ul e **public**, cheile sunt vizibile pe internet și sunt colectate automat de scannere în câteva minute.
 
-Chei sensibile aflate în repo:
+Chei cu **valori reale** aflate în repo, în ordinea urgenței:
 
-| Cheie | Fișier | Unde se rotește |
-|---|---|---|
-| `DATABASE_URL` / `DIRECT_URL` (parola Postgres) | `apps/backend/.env` | Supabase → Settings → Database → Reset password |
-| `STRIPE_SECRET_KEY` | `apps/backend/.env` | Stripe Dashboard → Developers → API keys → Roll key |
-| `STRIPE_WEBHOOK_SECRET` | `apps/backend/.env` | Stripe Dashboard → Webhooks → endpoint → Roll secret |
-| `STAFF_JWT_SECRET` | `apps/backend/.env` | generezi un secret nou (invalidează sesiunile staff active) |
-| `GOOGLE_MAPS_API_KEY` | `apps/backend/.env` | Google Cloud Console → Credentials → Regenerate |
-| `GOOGLE_MAPS_ANDROID_API_KEY` | `apps/mobile/.env` | Google Cloud Console → Credentials → Regenerate |
-| `REDIS_PASSWORD` | `.env` + `apps/backend/.env` | schimbi în ambele fișiere (trebuie să fie identice) |
+| Prioritate | Cheie | Fișier | Unde se rotește |
+|---|---|---|---|
+| 🔴 critic | `DATABASE_URL` / `DIRECT_URL` (parola Postgres) | `apps/backend/.env` | Supabase → Settings → Database → Reset password |
+| 🔴 critic | `STAFF_JWT_SECRET` | `apps/backend/.env` | generezi un secret nou de 64 caractere (invalidează sesiunile staff active) |
+| 🟠 ridicat | `GOOGLE_MAPS_ANDROID_API_KEY` | `apps/mobile/.env` | Google Cloud Console → Credentials → Regenerate (sau restricționează pe package name + SHA-1) |
+| 🟡 scăzut | `REDIS_PASSWORD` / `REDIS_URL` | `.env` + `apps/backend/.env` | schimbi în ambele fișiere (trebuie să fie identice); Redis ascultă doar pe `127.0.0.1`, deci nu e expus în rețea |
 
-`EXPO_PUBLIC_SUPABASE_ANON_KEY` este proiectată să fie publică (e protejată de Row Level Security), deci nu necesită rotire.
+Chei care **nu** sunt un risc:
+
+- `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `GOOGLE_MAPS_API_KEY` — momentan **placeholder-e goale** în `apps/backend/.env`. Când le completezi cu valori reale, ele devin expuse ca restul.
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY` — proiectată să fie publică (protejată de Row Level Security).
+- `SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `APP_URL`, `FRONTEND_URL` — URL-uri, nu secrete.
 
 Dacă vrei să revii la practica standard (secrete în afara git-ului): scoate comentariile din `.gitignore` pentru `.env`, rulează `git rm --cached` pe fișiere, **rotește toate cheile de mai sus** și distribuie `.env`-urile printr-un manager de parole.
 
