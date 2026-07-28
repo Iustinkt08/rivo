@@ -1,0 +1,36 @@
+<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Home / Explore Screen" clip-path="url(#clip0_0_1)">
+<rect width="440" height="956" transform="translate(-131 -753)" fill="white"/>
+<g id="Content">
+<g id="Categories Section">
+<g id="Category List (scroll-x)">
+<g id="Category Item">
+<g id="Icon Circle">
+<rect x="-17" y="-15" width="62" height="58" rx="29" fill="black" fill-opacity="0.01"/>
+<rect x="-16.5" y="-14.5" width="61" height="57" rx="28.5" stroke="#D8D8D8" stroke-opacity="0.8"/>
+<g id="icon/makeup">
+<g id="Group 58">
+<g id="Group">
+<path id="Vector" d="M20.2 12.2627C18.1 12.2627 16.4 13.9627 16.4 16.0627V26.1627H23.9V16.0627C24 13.9627 22.3 12.2627 20.2 12.2627Z" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_2" d="M16.5 23.3627H24" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g id="Group_2">
+<path id="Vector_3" d="M11.9 26.1626H4V15.8626C4 15.1626 4.6 14.5626 5.3 14.5626H10.6C11.3 14.5626 11.9 15.1626 11.9 15.8626V26.1626Z" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_4" d="M4.2 17.3627H11.8" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_5" d="M11.1 8.36267H4.89999V14.5627H11.1V8.36267Z" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_6" d="M10.1 8.36265H5.8V4.16265L9.2 2.06265C9.6 1.86265 10.1 2.16265 10.1 2.66265V8.36265Z" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_0_1">
+<rect width="440" height="956" fill="white" transform="translate(-131 -753)"/>
+</clipPath>
+</defs>
+</svg>

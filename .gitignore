@@ -1,9 +1,13 @@
 node_modules/
 dist/
-.env
-.env.local
 *.log
 .DS_Store
+
+# ATENȚIE — fișierele .env SUNT urmărite în acest repo, intenționat.
+# Decizie a proprietarului: colaboratorii primesc configurația completă direct
+# din clone, fără schimb manual de secrete. Consecință: orice cheie pusă în .env
+# e vizibilă oricui are acces la repo ȘI rămâne permanent în istoricul git.
+# Vezi secțiunea „Secrete și acces" din README.md.
 
 # Expo
 .expo/

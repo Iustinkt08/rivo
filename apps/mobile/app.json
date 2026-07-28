@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "NAVIRA",
+    "slug": "mobile",
+    "scheme": "navira",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/navira-splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.navira.mobile"
+    },
+    "android": {
+      "package": "com.navira.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/navira-splash.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}

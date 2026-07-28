@@ -1,0 +1,32 @@
+<svg width="26" height="32" viewBox="0 0 26 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Home / Explore Screen" clip-path="url(#clip0_0_1)">
+<rect width="440" height="956" transform="translate(-50.1 -751.05)" fill="white"/>
+<g id="Content">
+<g id="Categories Section">
+<g id="Category List (scroll-x)">
+<g id="Category Item">
+<g id="Icon Circle">
+<rect x="-18.1" y="-13.05" width="62" height="58" rx="29" fill="black" fill-opacity="0.01"/>
+<rect x="-17.6" y="-12.55" width="61" height="57" rx="28.5" stroke="#D8D8D8" stroke-opacity="0.8"/>
+<g id="icon/haircut">
+<g id="Group">
+<path id="Vector" d="M8.55001 16.35C8.55001 16.35 0.150005 9.95 5.95001 0.75L15.75 27.15" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_2" d="M20.35 31.15C22.9458 31.15 25.05 29.0458 25.05 26.45C25.05 23.8543 22.9458 21.75 20.35 21.75C17.7543 21.75 15.65 23.8543 15.65 26.45C15.65 29.0458 17.7543 31.15 20.35 31.15Z" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g id="Group_2">
+<path id="Vector_3" d="M17.35 16.35C17.35 16.35 25.75 9.95 19.95 0.75L10.15 27.15" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_4" d="M5.45 31.15C8.04574 31.15 10.15 29.0458 10.15 26.45C10.15 23.8543 8.04574 21.75 5.45 21.75C2.85426 21.75 0.75 23.8543 0.75 26.45C0.75 29.0458 2.85426 31.15 5.45 31.15Z" stroke="black" stroke-width="1.5" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_0_1">
+<rect width="440" height="956" fill="white" transform="translate(-50.1 -751.05)"/>
+</clipPath>
+</defs>
+</svg>
